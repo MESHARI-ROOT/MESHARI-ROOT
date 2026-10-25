@@ -21,5 +21,6 @@
     "@electric-sql/pglite": "0.2.17",
     "jsdom": "30.1.2",
     "netlify-cli": "27.12.1"
-  }
+  },
+  "packageManager": "npm@11.9.0"
 }
