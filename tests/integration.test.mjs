@@ -1,12 +1,14 @@
 import {test,after} from 'node:test';
+import {randomBytes} from 'node:crypto';
+const initialPassword=randomBytes(24).toString('hex'),replacementPassword=randomBytes(24).toString('hex');
 import assert from 'node:assert/strict';
-import {readFile} from 'node:fs/promises';
+import {readFile,readdir} from 'node:fs/promises';
 import {PGlite} from '@electric-sql/pglite';
 import {createApp} from '../server/app.mjs';
 import {passwordHash,normalizeCode,verifyPassword,sha256} from '../server/security.mjs';
-const pg=new PGlite();await pg.exec(await readFile('netlify/database/migrations/0001_zen.sql','utf8'));
+const pg=new PGlite();for(const file of (await readdir('netlify/database/migrations')).filter(f=>f.endsWith('.sql')).sort())await pg.exec(await readFile('netlify/database/migrations/'+file,'utf8'));
 const db={query:(sql,p=[])=>pg.query(sql,p),transaction:fn=>pg.transaction(fn)};
-const env={AUTH_PEPPER:'test-only-pepper-not-a-production-credential-0123456789',ADMIN_USER:'meshari',ADMIN_PASSWORD_HASH:await passwordHash('Testing-only-password-2026')};
+const env={AUTH_PEPPER:randomBytes(48).toString('hex'),ADMIN_USER:'meshari',ADMIN_PASSWORD_HASH:await passwordHash(initialPassword)};
 const errors=[];const app=createApp({db,env,logger:{error:(...v)=>errors.push(v)}});
 let adminCookie,seq=100000000;
 async function call(path,{method='GET',data,cookie=adminCookie,origin='https://zen.example',ip='192.0.2.25',csrf=true}={}){
@@ -14,7 +16,7 @@ async function call(path,{method='GET',data,cookie=adminCookie,origin='https://z
  const response=await app(new Request('https://zen.example/api'+path,{method,headers,...(data!==undefined?{body:JSON.stringify(data)}:{})}),{ip});
  const json=response.headers.get('content-type')?.includes('application/json')?await response.clone().json():null;return {response,status:response.status,json,cookie:response.headers.get('set-cookie')?.split(';')[0]};
 }
-const login=await call('/auth/admin',{method:'POST',data:{username:'meshari',password:'Testing-only-password-2026'},cookie:null});assert.equal(login.status,200);adminCookie=login.cookie;
+const login=await call('/auth/admin',{method:'POST',data:{username:'meshari',password:initialPassword},cookie:null});assert.equal(login.status,200);adminCookie=login.cookie;
 const clientData=(overrides={})=>({name:'عميل اختبار',code:String(++seq),active:true,allScripts:false,allowedScriptIds:[],expiresAt:new Date(Date.now()+86400000*30).toISOString(),maxSessions:1,notes:'ملاحظة خاصة',...overrides});
 async function createClient(overrides={}){const input=clientData(overrides),r=await call('/admin/clients',{method:'POST',data:input});assert.equal(r.status,201,JSON.stringify(r.json));return {...r.json,input};}
 async function clientLogin(code){return call('/auth/client',{method:'POST',data:{code},cookie:null,ip:'198.51.100.'+(++seq%200)});}
@@ -22,7 +24,7 @@ const scriptData=(overrides={})=>({title:'سكربت اختبار آمن',catego
 async function script(overrides={}){const r=await call('/admin/scripts',{method:'POST',data:scriptData(overrides)});assert.equal(r.status,201,JSON.stringify(r.json));return r.json;}
 after(async()=>{assert.deepEqual(errors,[],'No unexpected backend errors');await pg.close();});
 test('normalizes Arabic/Persian codes and preserves leading zero',()=>{assert.equal(normalizeCode('٠١٢٣٤٥٦٧٨'),'012345678');assert.equal(normalizeCode('۰۱۲۳۴۵۶۷۸'),'012345678');assert.throws(()=>normalizeCode('123'));assert.throws(()=>normalizeCode('12345678a'));});
-test('password hashing verifies correct password and rejects wrong one',async()=>{assert.equal(await verifyPassword('Testing-only-password-2026',env.ADMIN_PASSWORD_HASH),true);assert.equal(await verifyPassword('wrong',env.ADMIN_PASSWORD_HASH),false);});
+test('password hashing verifies correct password and rejects wrong one',async()=>{assert.equal(await verifyPassword(initialPassword,env.ADMIN_PASSWORD_HASH),true);assert.equal(await verifyPassword('wrong',env.ADMIN_PASSWORD_HASH),false);});
 test('server rejects anonymous protected access',async()=>{assert.equal((await call('/scripts',{cookie:null})).status,401);assert.equal((await call('/admin/clients',{cookie:null})).status,401);});
 test('rejects cross-origin and missing CSRF marker writes',async()=>{assert.equal((await call('/admin/clients',{method:'POST',data:clientData(),origin:'https://evil.example'})).status,403);assert.equal((await call('/admin/clients',{method:'POST',data:clientData(),csrf:false})).status,403);});
 test('admin cookie is secure, HttpOnly and SameSite Strict',()=>{const c=login.response.headers.get('set-cookie');for(const part of ['__Host-zen=','Secure','HttpOnly','SameSite=Strict','Path=/'])assert.ok(c.includes(part));assert.equal(login.response.headers.get('Cache-Control'),'no-store');});
@@ -41,4 +43,31 @@ test('rejects invalid uploads and past subscriptions',async()=>{assert.equal((aw
 test('dashboard, audit and sessions expose activity without tokens or codes',async()=>{const d=await call('/admin/dashboard');assert.equal(d.status,200);assert.ok(d.json.total>0);const logs=await call('/admin/audit');assert.ok(logs.json.items.length);const sessions=await call('/admin/sessions');assert.ok(!JSON.stringify(sessions.json).includes('tokenHash'));assert.ok(logs.json.items.every(x=>!x.ipHint.endsWith('.25')));});
 test('firmware/installation confirmations are labelled as client reports',async()=>{const c=await createClient(),a=await clientLogin(c.input.code);for(const action of ['firmware_confirmed','installation_confirmed'])assert.equal((await call('/activity',{method:'POST',data:{action},cookie:a.cookie})).status,200);const log=await call('/admin/audit?clientId='+c.id);assert.ok(log.json.items.some(x=>x.detail.includes('أكد العميل')));});
 test('login throttling is persisted across app instances',async()=>{let r;for(let n=0;n<21;n++)r=await call('/auth/client',{method:'POST',data:{code:'999999999'},cookie:null,ip:'203.0.113.200'});assert.equal(r.status,429);const app2=createApp({db,env});const response=await app2(new Request('https://zen.example/api/auth/client',{method:'POST',headers:{origin:'https://zen.example','X-Zen-Request':'1','content-type':'application/json'},body:'{"code":"999999999"}'}),{ip:'203.0.113.200'});assert.equal(response.status,429);});
-test('owner password change revokes all admin sessions',async()=>{const r=await call('/admin/password',{method:'POST',data:{currentPassword:'Testing-only-password-2026',newPassword:'New-testing-password-2026'}});assert.equal(r.status,200);assert.equal((await call('/admin/clients')).status,401);const logged=await call('/auth/admin',{method:'POST',cookie:null,data:{username:'meshari',password:'New-testing-password-2026'}});assert.equal(logged.status,200);adminCookie=logged.cookie;});
+test('owner password change revokes all admin sessions',async()=>{const r=await call('/admin/password',{method:'POST',data:{currentPassword:initialPassword,newPassword:replacementPassword}});assert.equal(r.status,200);assert.equal((await call('/admin/clients')).status,401);const logged=await call('/auth/admin',{method:'POST',cookie:null,data:{username:'meshari',password:replacementPassword}});assert.equal(logged.status,200);adminCookie=logged.cookie;});
+test('public catalogue lists published free and paid metadata without protected material',async()=>{
+ const free=await script({accessTier:'free',priceHalalas:0}),paid=await script({accessTier:'paid',priceHalalas:12500}),draft=await script({published:false,accessTier:'free'});
+ const r=await call('/catalog',{cookie:null});assert.equal(r.status,200);assert.ok(r.json.some(x=>x.id===free.id&&x.accessTier==='free'));assert.ok(r.json.some(x=>x.id===paid.id&&x.priceHalalas===12500));assert.ok(!r.json.some(x=>x.id===draft.id));for(const item of r.json)for(const key of ['fileData','fileName','sha256','installation','usage','requirements'])assert.ok(!(key in item));
+});
+test('anonymous free downloads return exact bytes and cannot access paid or draft IDs',async()=>{
+ const free=await script({accessTier:'free'}),paid=await script(),draft=await script({accessTier:'free',published:false});
+ const detail=await call('/free-scripts/'+free.id,{cookie:null});assert.equal(detail.status,200);const r=await call('/free-scripts/'+free.id+'/download',{cookie:null});assert.equal(r.status,200);assert.equal(sha256(Buffer.from(await r.response.arrayBuffer())),free.sha256);
+ for(const id of [paid.id,draft.id])for(const suffix of ['','/download'])assert.equal((await call('/free-scripts/'+id+suffix,{cookie:null})).status,404);
+});
+test('moving free script to paid immediately closes public download and requires entitlement',async()=>{
+ const free=await script({accessTier:'free'}),c=await createClient(),session=await clientLogin(c.input.code);
+ assert.equal((await call('/scripts/'+free.id+'/download',{cookie:session.cookie})).status,200);
+ assert.equal((await call('/admin/scripts/'+free.id,{method:'PUT',data:{...scriptData({accessTier:'paid',priceHalalas:5000}),revision:free.revision}})).status,200);
+ assert.equal((await call('/free-scripts/'+free.id+'/download',{cookie:null})).status,404);assert.equal((await call('/scripts/'+free.id+'/download',{cookie:session.cookie})).status,404);
+});
+test('paid updates are available to entitled active customers but never after expiry',async()=>{
+ const s=await script({accessTier:'paid'}),c=await createClient({allowedScriptIds:[s.id]}),session=await clientLogin(c.input.code);
+ const updated=await call('/admin/scripts/'+s.id,{method:'PUT',data:{...scriptData({version:'2.0',fileBase64:Buffer.from('// Version 2').toString('base64')}),revision:s.revision}});assert.equal(updated.status,200);
+ assert.equal((await call('/scripts/'+s.id,{cookie:session.cookie})).json.version,'2.0');await pg.query("UPDATE zen_clients SET expires_at=now()-interval '1 day' WHERE id=$1",[c.id]);assert.equal((await call('/scripts/'+s.id+'/download',{cookie:session.cookie})).status,401);
+});
+test('renewal rotates code atomically, revokes sessions and does not log full code',async()=>{
+ const c=await createClient(),session=await clientLogin(c.input.code),code=String(++seq);const r=await call('/admin/clients/'+c.id+'/extend',{method:'POST',data:{days:30,code,revision:c.revision}});assert.equal(r.status,200);assert.ok(new Date(r.json.expiresAt)>new Date(c.expiresAt));assert.equal((await call('/me',{cookie:session.cookie})).status,401);assert.equal((await clientLogin(c.input.code)).status,401);assert.equal((await clientLogin(code)).status,200);const log=await call('/admin/audit?clientId='+c.id);assert.ok(log.json.items.some(x=>x.action==='code_renewed'));assert.ok(!JSON.stringify(log.json).includes(code));
+});
+test('duplicate, unchanged or stale renewal codes do not extend the subscription',async()=>{
+ const c=await createClient(),other=await createClient();for(const [code,revision,status] of [[other.input.code,c.revision,409],[c.input.code,c.revision,422],[String(++seq),999,409]]){assert.equal((await call('/admin/clients/'+c.id+'/extend',{method:'POST',data:{days:30,code,revision}})).status,status);const current=await call('/admin/clients/'+c.id);assert.equal(current.json.expiresAt,c.expiresAt);assert.equal(current.json.revision,c.revision);}
+});
+test('tier and amount validation rejects invalid combinations',async()=>{for(const overrides of [{accessTier:'unknown'},{accessTier:'free',priceHalalas:1},{priceHalalas:-1},{priceHalalas:1.2}])assert.equal((await call('/admin/scripts',{method:'POST',data:scriptData(overrides)})).status,422);});

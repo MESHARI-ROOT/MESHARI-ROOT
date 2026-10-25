@@ -4,7 +4,7 @@ import { ApiError, normalizeCode, sha256, codeHash, randomToken, passwordHash, v
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const FILE_LIMIT = 2*1024*1024;
 const JSON_LIMIT = 3*1024*1024;
-const scriptColumns = 'id,title,category,version,description,requirements,installation,usage,changelog,published,file_name,file_size,sha256,created_at,updated_at,revision';
+const scriptColumns = 'id,title,category,version,description,requirements,installation,usage,changelog,published,access_tier,price_halalas,file_name,file_size,sha256,created_at,updated_at,revision';
 const camel = row => Object.fromEntries(Object.entries(row).map(([k,v])=>[k.replace(/_([a-z])/g,(_,c)=>c.toUpperCase()),v]));
 const json = (data, status=200, headers={}) => new Response(JSON.stringify(data), {status,headers:{'Content-Type':'application/json; charset=utf-8',...headers}});
 const textField = (v,name,min,max) => { if(typeof v!=='string'||v.trim().length<min||v.trim().length>max) throw new ApiError(422,`${name}: العدد المسموح من ${min} إلى ${max} حرفًا.`); return v.trim(); };
@@ -53,7 +53,7 @@ export function createApp({db,env=process.env,logger=console}) {
   }
   const admin=s=>{if(s.role!=='admin')throw new ApiError(403,'هذه الصلاحية متاحة للإدارة فقط.');};
   async function accessible(c,s,id,includeFile=false){
-    const rows=await query(c,`SELECT ${scriptColumns}${includeFile?',file_data':''} FROM zen_scripts t WHERE id=$1 AND ($2::boolean OR (published=true AND EXISTS(SELECT 1 FROM zen_clients c WHERE c.id=$3 AND c.active=true AND c.expires_at>now() AND (c.all_scripts OR EXISTS(SELECT 1 FROM zen_permissions p WHERE p.client_id=c.id AND p.script_id=t.id)))))`,[id,s.role==='admin',s.client_id]);
+    const rows=await query(c,`SELECT ${scriptColumns}${includeFile?',file_data':''} FROM zen_scripts t WHERE id=$1 AND ($2::boolean OR (published=true AND EXISTS(SELECT 1 FROM zen_clients c WHERE c.id=$3 AND c.active=true AND c.expires_at>now() AND (t.access_tier='free' OR c.all_scripts OR EXISTS(SELECT 1 FROM zen_permissions p WHERE p.client_id=c.id AND p.script_id=t.id)))))`,[id,s.role==='admin',s.client_id]);
     if(!rows.length)throw new ApiError(404,'السكربت غير موجود أو غير متاح لاشتراكك.');return rows[0];
   }
   async function permissions(c,id,ids){
@@ -77,6 +77,10 @@ export function createApp({db,env=process.env,logger=console}) {
   function parseScript(b,create){
     const data={};for(const [field,label,min,max] of [['title','الاسم',2,150],['category','التصنيف',1,80],['version','الإصدار',1,40],['description','الوصف',0,8000],['requirements','المتطلبات',0,8000],['installation','التركيب',0,20000],['usage','الاستخدام',0,20000],['changelog','التحديثات',0,8000]])data[field]=textField(b[field]??'',label,min,max);
     data.published=bool(b.published);
+    data.accessTier=b.accessTier??'paid';
+    if(!['free','paid'].includes(data.accessTier))throw new ApiError(422,'اختر مجاني أو مدفوع.');
+    data.priceHalalas=b.priceHalalas??0;
+    if(!Number.isSafeInteger(data.priceHalalas)||data.priceHalalas<0||data.priceHalalas>100000000||data.accessTier==='free'&&data.priceHalalas!==0)throw new ApiError(422,'سعر غير صالح. يجب أن يكون سعر المجاني صفرًا.');
     if(create||b.fileBase64){
       data.fileName=textField(b.fileName,'اسم الملف',1,180);
       if(/[\x00-\x1f\/\\]/.test(data.fileName)||! /\.(gpc|gpc2|txt|bin|zpk|zip)$/i.test(data.fileName))throw new ApiError(422,'ارفع ملف gpc أو gpc2 أو txt أو bin أو zpk أو zip.');
@@ -125,11 +129,25 @@ export function createApp({db,env=process.env,logger=console}) {
       await db.query('DELETE FROM zen_sessions WHERE token_hash=$1',[sha256(tokenFrom(req))]);
       return json({ok:true},200,{'Set-Cookie':cookie('',0)});
     }
+    // Public catalogue deliberately excludes files, hashes and private instructions.
+    if(path==='/api/catalog'&&method==='GET'){
+      await limit('catalog:'+ctx.ip,120,60);
+      const rows=await query(db,'SELECT id,title,category,version,description,access_tier,price_halalas,updated_at FROM zen_scripts WHERE published=true ORDER BY updated_at DESC,id');
+      return json(rows.map(camel));
+    }
+    const freeMatch=path.match(/^\/api\/free-scripts\/([^/]+)(\/download)?$/);
+    if(freeMatch&&method==='GET'){
+      await limit('public-download:'+ctx.ip,60,60);
+      const [r]=await query(db,`SELECT ${scriptColumns}${freeMatch[2]?',file_data':''} FROM zen_scripts WHERE id=$1 AND published=true AND access_tier='free'`,[idCheck(freeMatch[1])]);
+      if(!r)throw new ApiError(404,'السكربت المجاني غير متاح.');
+      if(!freeMatch[2])return json(camel(r));
+      return new Response(Buffer.from(r.file_data),{headers:{'Content-Type':'application/octet-stream','Content-Disposition':`attachment; filename="script${r.file_name.match(/\.[a-z0-9]+$/i)?.[0]??'.bin'}"; filename*=UTF-8''${encodeURIComponent(r.file_name).replace(/'/g,'%27')}`,'X-Content-SHA256':r.sha256}});
+    }
     const s=await auth(req);
     await limit('session:'+s.id,240,60);
     if(path==='/api/me'&&method==='GET')return json({role:s.role,name:s.name??'مشاري',clientId:s.client_id,expiresAt:s.subscription_expires_at,sessionExpiresAt:s.expires_at});
     if(path==='/api/scripts'&&method==='GET'){
-      const rows=await query(db,`SELECT ${scriptColumns} FROM zen_scripts t WHERE $1::boolean OR (published=true AND EXISTS(SELECT 1 FROM zen_clients c WHERE c.id=$2 AND c.active=true AND c.expires_at>now() AND (c.all_scripts OR EXISTS(SELECT 1 FROM zen_permissions p WHERE p.client_id=c.id AND p.script_id=t.id)))) ORDER BY updated_at DESC`,[s.role==='admin',s.client_id]);
+      const rows=await query(db,`SELECT ${scriptColumns} FROM zen_scripts t WHERE $1::boolean OR (published=true AND EXISTS(SELECT 1 FROM zen_clients c WHERE c.id=$2 AND c.active=true AND c.expires_at>now() AND (t.access_tier='free' OR c.all_scripts OR EXISTS(SELECT 1 FROM zen_permissions p WHERE p.client_id=c.id AND p.script_id=t.id)))) ORDER BY updated_at DESC`,[s.role==='admin',s.client_id]);
       return json(rows.map(camel));
     }
     let match=path.match(/^\/api\/scripts\/([^/]+)(\/download)?$/);
@@ -178,10 +196,12 @@ export function createApp({db,env=process.env,logger=console}) {
         const current=await client(db,id);await db.transaction(async c=>{await c.query('DELETE FROM zen_sessions WHERE client_id=$1',[id]);await audit(c,ctx,'مشاري',id,'sessions_revoked',current.name);});return json({ok:true});
       }
       if(method==='POST'&&match[3]==='extend'){
-        const b=await body(req);version(b.revision);if(!Number.isInteger(b.days)||b.days<1||b.days>3650)throw new ApiError(422,'مدة التمديد من يوم إلى 3650 يومًا.');
+        const b=await body(req);version(b.revision);const newCode=b.code?normalizeCode(b.code):null;if(!Number.isInteger(b.days)||b.days<1||b.days>3650)throw new ApiError(422,'مدة التمديد من يوم إلى 3650 يومًا.');
         return db.transaction(async c=>{
-          const rows=await query(c,"UPDATE zen_clients SET expires_at=GREATEST(expires_at,now())+($1::int*interval '1 day'),active=true,revision=revision+1 WHERE id=$2 AND revision=$3 RETURNING name",[b.days,id,b.revision]);
+          if(newCode){const [current]=await query(c,'SELECT code_hash FROM zen_clients WHERE id=$1 FOR UPDATE',[id]);if(current?.code_hash===codeHash(newCode,env.AUTH_PEPPER))throw new ApiError(422,'اختر رمزًا جديدًا مختلفًا عن الرمز الحالي.');}
+          const rows=await query(c,"UPDATE zen_clients SET expires_at=GREATEST(expires_at,now())+($1::int*interval '1 day'),active=true,revision=revision+1,code_hash=COALESCE($4,code_hash),code_hint=COALESCE($5,code_hint) WHERE id=$2 AND revision=$3 RETURNING name",[b.days,id,b.revision,newCode?codeHash(newCode,env.AUTH_PEPPER):null,newCode?.slice(-3)??null]);
           if(!rows.length)throw new ApiError(409,'تغيرت بيانات العميل. حدّث القائمة قبل التمديد.');
+          if(newCode){await c.query('DELETE FROM zen_sessions WHERE client_id=$1',[id]);await audit(c,ctx,'مشاري',id,'code_renewed','تم إصدار رمز تجديد وإلغاء الجلسات السابقة');}
           await audit(c,ctx,'مشاري',id,'subscription_extended',rows[0].name+' · '+b.days+' يوم');return json(await client(c,id));
         });
       }
@@ -227,13 +247,13 @@ export function createApp({db,env=process.env,logger=console}) {
     }
     if(path==='/api/admin/scripts'&&method==='POST'){
       const b=await body(req),v=parseScript(b,true),id=randomUUID();
-      return db.transaction(async c=>{await c.query('INSERT INTO zen_scripts(id,title,category,version,description,requirements,installation,usage,changelog,published,file_name,file_size,sha256,file_data) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)',[id,v.title,v.category,v.version,v.description,v.requirements,v.installation,v.usage,v.changelog,v.published,v.fileName,v.file.length,v.sha256,v.file]);await audit(c,ctx,'مشاري',null,'script_created',v.title);return json(camel((await query(c,`SELECT ${scriptColumns} FROM zen_scripts WHERE id=$1`,[id]))[0]),201);});
+      return db.transaction(async c=>{await c.query('INSERT INTO zen_scripts(id,title,category,version,description,requirements,installation,usage,changelog,published,file_name,file_size,sha256,file_data,access_tier,price_halalas) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)',[id,v.title,v.category,v.version,v.description,v.requirements,v.installation,v.usage,v.changelog,v.published,v.fileName,v.file.length,v.sha256,v.file,v.accessTier,v.priceHalalas]);await audit(c,ctx,'مشاري',null,'script_created',v.title);return json(camel((await query(c,`SELECT ${scriptColumns} FROM zen_scripts WHERE id=$1`,[id]))[0]),201);});
     }
     match=path.match(/^\/api\/admin\/scripts\/([^/]+)$/);
     if(match&&method==='PUT'){
       const id=idCheck(match[1]),b=await body(req),v=parseScript(b,false);version(b.revision);
       return db.transaction(async c=>{
-        const rows=await query(c,`UPDATE zen_scripts SET title=$1,category=$2,version=$3,description=$4,requirements=$5,installation=$6,usage=$7,changelog=$8,published=$9,updated_at=now(),revision=revision+1,file_name=COALESCE($10,file_name),file_size=COALESCE($11,file_size),sha256=COALESCE($12,sha256),file_data=COALESCE($13,file_data) WHERE id=$14 AND revision=$15 RETURNING ${scriptColumns}`,[v.title,v.category,v.version,v.description,v.requirements,v.installation,v.usage,v.changelog,v.published,v.fileName??null,v.file?.length??null,v.sha256??null,v.file??null,id,b.revision]);
+        const rows=await query(c,`UPDATE zen_scripts SET title=$1,category=$2,version=$3,description=$4,requirements=$5,installation=$6,usage=$7,changelog=$8,published=$9,updated_at=now(),revision=revision+1,file_name=COALESCE($10,file_name),file_size=COALESCE($11,file_size),sha256=COALESCE($12,sha256),file_data=COALESCE($13,file_data),access_tier=$16,price_halalas=$17 WHERE id=$14 AND revision=$15 RETURNING ${scriptColumns}`,[v.title,v.category,v.version,v.description,v.requirements,v.installation,v.usage,v.changelog,v.published,v.fileName??null,v.file?.length??null,v.sha256??null,v.file??null,id,b.revision,v.accessTier,v.priceHalalas]);
         if(!rows.length)throw new ApiError(409,'تغير السكربت. حدّث القائمة قبل الحفظ.');await audit(c,ctx,'مشاري',null,'script_updated',v.title);return json(camel(rows[0]));
       });
     }
