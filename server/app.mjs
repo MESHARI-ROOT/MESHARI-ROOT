@@ -21,6 +21,8 @@ async function body(req) {
   try {const b=JSON.parse(Buffer.concat(chunks).toString('utf8'));if(!b||typeof b!=='object'||Array.isArray(b))throw 0;return b;}catch{throw new ApiError(400,'تعذّر قراءة بيانات الطلب.');}
 }
 export function createApp({db,env=process.env,logger=console}) {
+  // Public download throttling has its own ephemeral salt until admin setup exists.
+  const publicRateSalt=randomToken();
   const cookieName=env.ZEN_LOCAL_DEV==='1'?'zen_local':'__Host-zen';
   const cookie=(token,seconds=28800)=>`${cookieName}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${seconds}${env.ZEN_LOCAL_DEV==='1'?'':'; Secure'}`;
   const tokenFrom=req=>(req.headers.get('cookie')??'').split(';').map(x=>x.trim()).find(x=>x.startsWith(cookieName+'='))?.slice(cookieName.length+1)??'';
@@ -36,8 +38,8 @@ export function createApp({db,env=process.env,logger=console}) {
   async function audit(c,ctx,actor,clientId,action,detail='') {
     await c.query('INSERT INTO zen_audit(actor,client_id,action,detail,ip_hint,device) VALUES($1,$2,$3,$4,$5,$6)',[actor.slice(0,150),clientId,action,String(detail).slice(0,400),ctx.ipHint,ctx.device]);
   }
-  async function limit(key,max,seconds) {
-    const hashed=codeHash(key,env.AUTH_PEPPER);
+  async function limit(key,max,seconds,isPublic=false) {
+    const hashed=codeHash(key,isPublic?(env.AUTH_PEPPER||publicRateSalt):env.AUTH_PEPPER);
     const [r]=await query(db,`INSERT INTO zen_limits(key,attempts,resets_at) VALUES($1,1,now()+($2::int*interval '1 second'))
       ON CONFLICT(key) DO UPDATE SET attempts=CASE WHEN zen_limits.resets_at<=now() THEN 1 ELSE zen_limits.attempts+1 END,
       resets_at=CASE WHEN zen_limits.resets_at<=now() THEN now()+($2::int*interval '1 second') ELSE zen_limits.resets_at END RETURNING attempts`,[hashed,seconds]);
@@ -91,7 +93,8 @@ export function createApp({db,env=process.env,logger=console}) {
   }
   async function route(req,ctx){
     const url=new URL(req.url),path=url.pathname.replace(/\/$/,''),method=req.method;
-    await ready();
+    const publicRead=method==='GET'&&(path==='/api/catalog'||/^\/api\/free-scripts\/[^/]+(?:\/download)?$/.test(path));
+    if(!publicRead)await ready();
     if(path==='/api/health'&&method==='GET')return json({ready:true,version:'3.0.0'});
     if(['POST','PUT','DELETE','PATCH'].includes(method)){
       if(req.headers.get('origin')!==url.origin||req.headers.get('X-Zen-Request')!=='1')throw new ApiError(403,'مصدر الطلب غير معتمد.');
@@ -131,13 +134,13 @@ export function createApp({db,env=process.env,logger=console}) {
     }
     // Public catalogue deliberately excludes files, hashes and private instructions.
     if(path==='/api/catalog'&&method==='GET'){
-      await limit('catalog:'+ctx.ip,120,60);
+      await limit('catalog:'+ctx.ip,120,60,true);
       const rows=await query(db,'SELECT id,title,category,version,description,access_tier,price_halalas,updated_at FROM zen_scripts WHERE published=true ORDER BY updated_at DESC,id');
       return json(rows.map(camel));
     }
     const freeMatch=path.match(/^\/api\/free-scripts\/([^/]+)(\/download)?$/);
     if(freeMatch&&method==='GET'){
-      await limit('public-download:'+ctx.ip,60,60);
+      await limit('public-download:'+ctx.ip,60,60,true);
       const [r]=await query(db,`SELECT ${scriptColumns}${freeMatch[2]?',file_data':''} FROM zen_scripts WHERE id=$1 AND published=true AND access_tier='free'`,[idCheck(freeMatch[1])]);
       if(!r)throw new ApiError(404,'السكربت المجاني غير متاح.');
       if(!freeMatch[2])return json(camel(r));

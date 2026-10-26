@@ -7,6 +7,8 @@ import {PGlite} from '@electric-sql/pglite';
 import {createApp} from '../server/app.mjs';
 import {passwordHash,normalizeCode,verifyPassword,sha256} from '../server/security.mjs';
 const pg=new PGlite();for(const file of (await readdir('netlify/database/migrations')).filter(f=>f.endsWith('.sql')).sort())await pg.exec(await readFile('netlify/database/migrations/'+file,'utf8'));
+// Isolate access-control fixtures from catalog seed migrations in this in-memory database.
+await pg.exec('DELETE FROM zen_scripts');
 const db={query:(sql,p=[])=>pg.query(sql,p),transaction:fn=>pg.transaction(fn)};
 const env={AUTH_PEPPER:randomBytes(48).toString('hex'),ADMIN_USER:'meshari',ADMIN_PASSWORD_HASH:await passwordHash(initialPassword)};
 const errors=[];const app=createApp({db,env,logger:{error:(...v)=>errors.push(v)}});
