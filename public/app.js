@@ -1,3 +1,4 @@
+import {renderVisualGuide} from './visual-guide.js';
 import {$,$$,escape as e,icon,date,daysLeft,size,api,toast,submit,empty,spinner,downloadScript} from './ui.js';
 import {mascot,startMotion} from './motion.js';
 import {renderAdmin} from './admin.js';
@@ -12,7 +13,7 @@ const safe=fn=>async()=>{try{await fn();}catch(error){if(error.status===401&&me)
 function sessionEnded(message='انتهت الجلسة. سجّل الدخول مرة أخرى.') {me=null;if($('#modal').open)$('#modal').close();renderHeader();location.hash='login';renderLogin();if(message)toast(message,true);}
 function renderHeader(){
   document.body.classList.toggle('signed-out',!me);
-  $('#header-actions').innerHTML=me?`<div class="account-info"><strong>${e(me.role==='admin'?'مشاري · مدير النظام':me.name)}</strong><small>${me.role==='admin'?'كل الصلاحيات بين يديك':'اشتراكك صالح حتى '+date(me.expiresAt,true)}</small></div>${me.role==='admin'?'<a class="button small ghost" href="#admin">'+icon('shield')+'الإدارة</a>':''}<a class="button small ghost" href="#catalog">السكربتات</a><button class="button small ghost" id="logout" aria-label="تسجيل الخروج">${icon('logout')}</button>`:'<a class="button small ghost" href="#catalog">السكربتات</a><a class="button small primary" href="#login">دخول</a>';
+  $('#header-actions').innerHTML=me?`<div class="account-info"><strong>${e(me.role==='admin'?'مشاري · مدير النظام':me.name)}</strong><small>${me.role==='admin'?'كل الصلاحيات بين يديك':'اشتراكك صالح حتى '+date(me.expiresAt,true)}</small></div>${me.role==='admin'?'<a class="button small ghost" href="#admin">'+icon('shield')+'الإدارة</a>':''}<a class="button small ghost" href="#catalog">السكربتات</a><a class="button small ghost" href="#setup-install">تركيب السكربتات</a><a class="button small ghost" href="#setup-update">تركيب التحديثات</a><button class="button small ghost" id="logout" aria-label="تسجيل الخروج">${icon('logout')}</button>`:'<a class="button small ghost" href="#catalog">السكربتات</a><a class="button small ghost" href="#setup-install">تركيب السكربتات</a><a class="button small ghost" href="#setup-update">تركيب التحديثات</a><a class="button small primary" href="#login">دخول</a>';
   if($('#logout'))$('#logout').onclick=safe(async()=>{await api('/auth/logout',{method:'POST',data:{}});sessionEnded('');});
 }
 function renderShell(view){
@@ -49,7 +50,7 @@ async function wizard(mode,query){
   scripts=await api('/scripts');let step=1,downloaded=null,ack=false;const fromQuery=new URLSearchParams(query).get('script');let selected=scripts.find(s=>s.id===fromQuery)||scripts[0];
   const render=()=>{
     const updating=mode==='firmware';
-    main.innerHTML=`<div class="wizard"><a class="text-button" href="#home">العودة للرئيسية ←</a><div class="wizard-head"><h1>${updating?'تحديث القطعة':'تركيب السكربت'}</h1></div><div class="steps"><span class="step ${step===1?'active':''}"><b>1</b>تحديث القطعة</span>${!updating?`<span class="step ${step===2?'active':''}"><b>2</b>رفع السكربت</span>`:''}</div><div id="wizard-content"></div></div>`;
+    main.innerHTML=`<div class="wizard"><a class="text-button" href="#home">العودة للرئيسية ←</a><a class="button ghost" href="${mode==='firmware'?'#setup-update':'#setup-install'}">افتح الشرح المتحرك</a><div class="wizard-head"><h1>${updating?'تحديث القطعة':'تركيب السكربت'}</h1></div><div class="steps"><span class="step ${step===1?'active':''}"><b>1</b>تحديث القطعة</span>${!updating?`<span class="step ${step===2?'active':''}"><b>2</b>رفع السكربت</span>`:''}</div><div id="wizard-content"></div></div>`;
     const root=$('#wizard-content');
     if(step===1){root.innerHTML=`<section class="device-panel"><div class="device-top"><strong>وصّل قطعة Zen بالكمبيوتر</strong><span class="step-counter">الخطوة 1 ${updating?'':'من 2'}</span></div><ol class="connection-instructions"><li>استخدم كابل بيانات ووصّله مباشرة بالكمبيوتر.</li><li>أغلق Zen Studio وأي برنامج يستخدم القطعة.</li><li>اضغط «فحص اتصال القطعة» واختر جهازك من النافذة.</li><li>افتح أداة التحديث أدناه واتبع تعليمات وضع التحديث فيها.</li></ol><div class="device-main">${icon('device')}<h2 id="device-state">${device.device?'تم التعرف على '+e(device.device.productName):'بانتظار اتصال القطعة'}</h2><p>فحص الاتصال لا يقرأ إصدار القطعة ولا يحدّثها.</p><button class="button" id="connect-device">${icon('device')}${device.device?'إعادة فحص الاتصال':'فحص اتصال القطعة'}</button></div></section><div class="panel stack updater-actions"><a class="button primary full" href="https://cronus.support/fw" target="_blank" rel="noopener noreferrer">${icon('external')}فتح أداة تحديث Cronus</a><a class="small" href="https://guide.cronus.support/step1-update-firmware" target="_blank" rel="noopener noreferrer">دليل التحديث الرسمي ←</a><label class="check"><input id="firmware-ack" type="checkbox"><span>أتممت التحديث، أو أكدت الأداة الرسمية أن القطعة محدّثة</span></label><div class="wizard-bottom"><a class="button ghost" href="#home">رجوع</a><button class="button primary" id="wizard-next" disabled>${updating?'تسجيل اكتمال التحديث':'تابع لرفع السكربت'} ${icon('arrow')}</button></div></div>`;
       $('#connect-device').onclick=safe(async()=>{const b=$('#connect-device');b.disabled=true;try{const d=await device.connect();$('#device-state').textContent='تم التعرف على '+d.name;toast('نجح فحص الاتصال. القطعة جاهزة لاستخدام الأداة الرسمية.');}finally{b.disabled=false;}});
@@ -64,9 +65,10 @@ function guide(){main.innerHTML=`<div class="page-title"><div><span class="eyebr
 async function route(){
   const version=++routeVersion;const [path,query='']=(location.hash.slice(1)||'home').split('?'),[view,id]=path.split('/');renderHeader();
   document.body.classList.remove('login-screen');
-  if(['catalog','free','paid','free-script'].includes(view)||(!me&&view==='home')){
+  if(['setup-install','setup-update'].includes(view)){renderShell(view);renderVisualGuide(view==='setup-update'?'update':'install',device);return;}
+  if(['catalog','free','paid','cod7','free-script'].includes(view)||(!me&&view==='home')){
     renderShell('catalog');main.innerHTML=spinner();
-    try{if(view==='free-script'&&id)await renderFreeScript(id);else await renderCatalog(['free','paid'].includes(view)?view:'catalog',!!me);}
+    try{if(view==='free-script'&&id)await renderFreeScript(id);else await renderCatalog(['free','paid','cod7'].includes(view)?view:'catalog',!!me);}
     catch(error){main.innerHTML=empty('تعذّر تحميل المكتبة',error.message,'<button class="button primary" id="retry-page">إعادة المحاولة</button>');$('#retry-page').onclick=route;}
     return;
   }
