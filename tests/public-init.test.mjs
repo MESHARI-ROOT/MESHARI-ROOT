@@ -21,3 +21,14 @@ test('restore recognizes only previously permitted Zen devices without opening p
  const device=new ZenDevice(hid);assert.equal((await device.restore()).name,'Cronus ZEN');assert.equal(prompts,0);
  hid.getDevices=async()=>[];assert.equal(await device.restore(),null);assert.equal(device.device,null);
 });
+test('authorized USB reconnect restores detection without prompting or opening hardware',async()=>{
+ const handlers={},events=[];let present=[];let opened=0,prompts=0;
+ const zen={productName:'Cronus ZEN',open(){opened++;}};
+ const hid={addEventListener(type,fn){handlers[type]=fn;},getDevices:async()=>present,requestDevice:async()=>{prompts++;return[];}};
+ const device=new ZenDevice(hid,state=>events.push(state));
+ present=[zen];handlers.connect();await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(device.device,zen);assert.deepEqual(events,['connected']);
+ await device.restore();assert.deepEqual(events,['connected']);
+ handlers.disconnect({device:zen});assert.equal(device.device,null);assert.deepEqual(events,['connected','disconnected']);
+ assert.equal(opened,0);assert.equal(prompts,0);
+});

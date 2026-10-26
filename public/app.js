@@ -9,12 +9,12 @@ import {bindCodeInput,codeFields} from './login-code.js';
 const main=$('#main');
 let me=null,serviceReady=false,serviceMessage='',loginMode='client',scripts=[],routeVersion=0;
 const adminViews=['admin','clients','manage-scripts','activity','sessions','settings'];
-const device=new ZenDevice(navigator.hid,state=>{api('/activity',{method:'POST',data:{action:state==='connected'?'device_connected':'device_disconnected'}}).catch(()=>{});if(state==='disconnected'){toast('انفصل جهاز Zen عن الكمبيوتر.');const status=$('#device-state');if(status)status.textContent='انفصل الجهاز — أعد توصيله لفحص الاتصال.';}});
+const device=new ZenDevice(navigator.hid,state=>{api('/activity',{method:'POST',data:{action:state==='connected'?'device_connected':'device_disconnected'}}).catch(()=>{});const status=$('#device-state');if(state==='disconnected'){toast('انفصل جهاز Zen عن الكمبيوتر.');if(status)status.textContent='انفصل الجهاز — أعد توصيله لاستعادة التعرف بإذنك السابق.';}else if(status){status.textContent='تم التعرف على '+device.device.productName+' بإذن سابق — جاهز لاستخدام الأداة الرسمية.';}});
 const safe=fn=>async()=>{try{await fn();}catch(error){if(error.status===401&&me)sessionEnded(error.message);else toast(error.message,true);}};
 function sessionEnded(message='انتهت الجلسة. سجّل الدخول مرة أخرى.') {me=null;if($('#modal').open)$('#modal').close();renderHeader();location.hash='login';renderLogin();if(message)toast(message,true);}
 function renderHeader(){
   document.body.classList.toggle('signed-out',!me);
-  $('#header-actions').innerHTML=me?`<div class="account-info"><strong>${e(me.role==='admin'?'مشاري · مدير النظام':me.name)}</strong><small>${me.role==='admin'?'كل الصلاحيات بين يديك':'اشتراكك صالح حتى '+date(me.expiresAt,true)}</small></div>${me.role==='admin'?'<a class="button small ghost" href="#admin">'+icon('shield')+'الإدارة</a>':''}<a class="button small ghost" href="#catalog">السكربتات</a><a class="button small ghost" href="#setup-install">تركيب السكربتات</a><a class="button small ghost" href="#setup-update">تركيب التحديثات</a><button class="button small ghost" id="logout" aria-label="تسجيل الخروج">${icon('logout')}</button>`:'<a class="button small ghost" href="#catalog">السكربتات</a><a class="button small ghost" href="#setup-install">تركيب السكربتات</a><a class="button small ghost" href="#setup-update">تركيب التحديثات</a><a class="button small primary" href="#login">دخول</a>';
+  $('#header-actions').innerHTML=me?`<div class="account-info"><strong>${e(me.role==='admin'?'مشاري · مدير النظام':me.name)}</strong><small>${me.role==='admin'?'كل الصلاحيات بين يديك':'اشتراكك صالح حتى '+date(me.expiresAt,true)}</small></div>${me.role==='admin'?'<a class="button small ghost" href="#admin">'+icon('shield')+'الإدارة</a>':''}<a class="button small ghost" href="#subscription">اشتراكي</a><a class="button small ghost" href="#library">مكتبتي</a><a class="button small ghost" href="#setup-install">تركيب السكربتات</a><a class="button small ghost" href="#setup-update">تركيب التحديثات</a><button class="button small ghost" id="logout" aria-label="تسجيل الخروج">${icon('logout')}</button>`:'<a class="button small ghost" href="#catalog">السكربتات</a><a class="button small ghost" href="#setup-install">تركيب السكربتات</a><a class="button small ghost" href="#setup-update">تركيب التحديثات</a><a class="button small primary" href="#login">دخول</a>';
   if($('#logout'))$('#logout').onclick=safe(async()=>{await api('/auth/logout',{method:'POST',data:{}});sessionEnded('');});
 }
 function renderShell(view){
@@ -35,6 +35,10 @@ function renderLogin(){
 }
 function home(){
   main.innerHTML=`<section class="hero">${brandHero('تركيب السكربت · تحديث القطعة')}<h2 class="home-title">وش تبي تسوي؟</h2><div class="choice-grid"><a class="choice featured" href="#install"><span class="ribbon">ابدأ من هنا</span><span class="icon-box">${icon('puzzle')}</span><h3>تركيب سكربتي</h3><p>اختر سكربتك، اقرأ التعليمات،<br>وأكمل التركيب على قطعتك.</p><span class="link-label">ابدأ التركيب ${icon('arrow')}</span></a><a class="choice" href="#firmware"><span class="icon-box">${icon('bolt')}</span><h3>تحديث القطعة فقط</h3><p>جهّز Cronus ZEN وحدثها<br>باستخدام أداة التحديث الرسمية.</p><span class="link-label">تحديث القطعة ${icon('arrow')}</span></a></div><a class="guide-strip" href="#library">${icon('script')}<span><strong>مكتبة السكربتات الخاصة بك</strong><small>الشرح الكامل · الإصدارات · الملفات المتاحة لاشتراكك</small></span><span class="arrow">←</span></a><a class="text-button" href="#guide">${icon('book')} تحتاج مساعدة؟ افتح دليل الاستخدام</a>${me.role==='client'?`<div class="subscription-line"><span class="badge"><span class="dot"></span>اشتراك نشط</span><span>متبقي ${daysLeft(me.expiresAt)} يوم</span><span>حتى ${date(me.expiresAt)}</span></div>`:'<div class="subscription-line"><span class="badge gold">عرض المالك</span><a href="#admin">العودة إلى لوحة الإدارة ←</a></div>'}</section>`;
+}
+async function subscription(){
+ const info=await api('/me/subscription');
+ main.innerHTML=`<div class="page-title"><div><span class="eyebrow">حسابك</span><h1>الاشتراك والملفات</h1><p>حالة اشتراكك من الخادم مباشرة.</p></div><a class="button ghost" href="#home">الرئيسية</a></div><section class="panel"><h2>${info.role==='admin'?'حساب المالك':e(info.name)}</h2>${info.role==='admin'?'<p>يمكنك إدارة العملاء والاشتراكات وصلاحيات الملفات من لوحة الإدارة.</p><a class="button primary" href="#clients">إدارة العملاء</a>':`<div class="detail-meta"><div><span>الحالة</span><strong>اشتراك نشط</strong></div><div><span>ينتهي في</span><strong>${date(info.expiresAt)}</strong></div><div><span>المدة المتبقية</span><strong>${info.remainingDays} يوم</strong></div><div><span>الملفات المتاحة لك</span><strong>${info.availableScripts}</strong></div></div><p>مشاري يحدد مدة اشتراكك وصلاحيات الملفات. تتوقف التنزيلات المحمية عند انتهاء المدة أو إيقاف الحساب.</p>`}<div class="row"><a class="button primary" href="#setup-install">اختيار سكربت وتنزيله</a><a class="button ghost" href="#library">مكتبتي</a></div></section>`;
 }
 async function library(){
   scripts=await api('/scripts');
@@ -67,7 +71,7 @@ async function route(){
   const version=++routeVersion;const [path,query='']=(location.hash.slice(1)||'home').split('?'),[view,id]=path.split('/');renderHeader();
   document.body.classList.remove('login-screen');
   if(view==='home'){renderShell('home');renderStation();return;}
-  if(['setup-install','setup-update'].includes(view)){renderShell(view);renderVisualGuide(view==='setup-update'?'update':'install',device);return;}
+  if(['setup-install','setup-update'].includes(view)){renderShell(view);renderVisualGuide(view==='setup-update'?'update':'install',device,!!me);return;}
   if(['catalog','free','paid','cod7','free-script'].includes(view)||(!me&&view==='home')){
     renderShell('catalog');main.innerHTML=spinner();
     try{if(view==='free-script'&&id)await renderFreeScript(id);else await renderCatalog(['free','paid','cod7'].includes(view)?view:'catalog',!!me);}
@@ -77,7 +81,7 @@ async function route(){
   if(!me){renderLogin();return;}
   if(adminViews.includes(view)&&me.role!=='admin'){location.hash='home';return;}
   renderShell(view);main.innerHTML=spinner();document.title=(adminViews.includes(view)?'إدارة مشاري':'MESHARI-ALOTAIBI')+' | مركز السكربتات';
-  try{if(version!==routeVersion)return;if(adminViews.includes(view))await renderAdmin(view,query,()=>sessionEnded(''));else if(view==='library')await library();else if(view==='script'&&id)await scriptDetail(id);else if(view==='install'||view==='firmware')await wizard(view,query);else if(view==='guide')guide();else home();}
+  try{if(version!==routeVersion)return;if(adminViews.includes(view))await renderAdmin(view,query,()=>sessionEnded(''));else if(view==='subscription')await subscription();else if(view==='library')await library();else if(view==='script'&&id)await scriptDetail(id);else if(view==='install'||view==='firmware')await wizard(view,query);else if(view==='guide')guide();else home();}
   catch(error){if(error.status===401){sessionEnded(error.message);return;}main.innerHTML=empty('تعذّر تحميل الصفحة',error.message,'<button class="button primary" id="retry-page">إعادة المحاولة</button>');$('#retry-page').onclick=route;}
 }
 addEventListener('hashchange',()=>{route();window.scrollTo(0,0);});

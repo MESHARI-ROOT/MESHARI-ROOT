@@ -1,11 +1,18 @@
 import {platformSupport} from './platform.js';
 export class ZenDevice {
-  constructor(hid=globalThis.navigator?.hid,onChange=()=>{}){this.hid=hid;this.device=null;this.onChange=onChange;hid?.addEventListener('disconnect',event=>{if(event.device===this.device){this.device=null;onChange('disconnected');}});}
+  constructor(hid=globalThis.navigator?.hid,onChange=()=>{}){
+    this.hid=hid;this.device=null;this.onChange=onChange;
+    hid?.addEventListener('disconnect',event=>{if(event.device===this.device){this.device=null;this.onChange('disconnected');}});
+    // A connect event only exposes devices already permitted for this origin.
+    hid?.addEventListener('connect',()=>{this.restore().catch(()=>{});});
+  }
   get supported(){return !!this.hid&&globalThis.isSecureContext!==false&&!platformSupport().mobile;}
   async restore(){
     if(!this.supported||!this.hid.getDevices)return null;
     const devices=await this.hid.getDevices();
+    const previous=this.device;
     this.device=devices.find(d=>/cronus|\bzen\b/i.test(d.productName))||null;
+    if(previous!==this.device)this.onChange(this.device?'connected':'disconnected');
     return this.device?{name:this.device.productName}:null;
   }
   async connect(){

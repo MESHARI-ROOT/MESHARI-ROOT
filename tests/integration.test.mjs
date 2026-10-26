@@ -73,3 +73,16 @@ test('duplicate, unchanged or stale renewal codes do not extend the subscription
  const c=await createClient(),other=await createClient();for(const [code,revision,status] of [[other.input.code,c.revision,409],[c.input.code,c.revision,422],[String(++seq),999,409]]){assert.equal((await call('/admin/clients/'+c.id+'/extend',{method:'POST',data:{days:30,code,revision}})).status,status);const current=await call('/admin/clients/'+c.id);assert.equal(current.json.expiresAt,c.expiresAt);assert.equal(current.json.revision,c.revision);}
 });
 test('tier and amount validation rejects invalid combinations',async()=>{for(const overrides of [{accessTier:'unknown'},{accessTier:'free',priceHalalas:1},{priceHalalas:-1},{priceHalalas:1.2}])assert.equal((await call('/admin/scripts',{method:'POST',data:scriptData(overrides)})).status,422);});
+test('subscription summary counts only published accessible files and rejects expired sessions',async()=>{
+ const free=await script({accessTier:'free'}),paid=await script(),hidden=await script({published:false});
+ const c=await createClient({allowedScriptIds:[paid.id,hidden.id]}),session=await clientLogin(c.input.code);
+ const result=await call('/me/subscription',{cookie:session.cookie});
+ assert.equal(result.status,200);assert.equal(result.json.status,'active');assert.ok(result.json.remainingDays>=29);assert.ok(result.json.availableScripts>=2);
+ const before=result.json.availableScripts;
+ await call('/admin/clients/'+c.id,{method:'PUT',data:{...c.input,code:'',allowedScriptIds:[],revision:c.revision}});
+ assert.equal((await call('/me/subscription',{cookie:session.cookie})).json.availableScripts,before-1);
+ assert.equal((await call('/me/subscription',{cookie:null})).status,401);
+ const owner=await call('/me/subscription');assert.equal(owner.json.status,'owner');assert.equal(owner.json.expiresAt,null);
+ await pg.query("UPDATE zen_clients SET expires_at=now()-interval '1 second' WHERE id=$1",[c.id]);
+ assert.equal((await call('/me/subscription',{cookie:session.cookie})).status,401);
+});

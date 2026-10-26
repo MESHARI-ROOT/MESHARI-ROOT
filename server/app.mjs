@@ -149,6 +149,11 @@ export function createApp({db,env=process.env,logger=console}) {
     const s=await auth(req);
     await limit('session:'+s.id,240,60);
     if(path==='/api/me'&&method==='GET')return json({role:s.role,name:s.name??'مشاري',clientId:s.client_id,expiresAt:s.subscription_expires_at,sessionExpiresAt:s.expires_at});
+    if(path==='/api/me/subscription'&&method==='GET'){
+      if(s.role==='admin')return json({role:'admin',status:'owner',expiresAt:null,remainingDays:null});
+      const [counts]=await query(db,`SELECT count(*)::int AS available FROM zen_scripts t WHERE published=true AND (access_tier='free' OR EXISTS(SELECT 1 FROM zen_clients c WHERE c.id=$1 AND (c.all_scripts OR EXISTS(SELECT 1 FROM zen_permissions p WHERE p.client_id=c.id AND p.script_id=t.id))))`,[s.client_id]);
+      return json({role:'client',name:s.name,status:'active',expiresAt:s.subscription_expires_at,remainingDays:Math.max(0,Math.ceil((new Date(s.subscription_expires_at)-Date.now())/86400000)),availableScripts:counts.available});
+    }
     if(path==='/api/scripts'&&method==='GET'){
       const rows=await query(db,`SELECT ${scriptColumns} FROM zen_scripts t WHERE $1::boolean OR (published=true AND EXISTS(SELECT 1 FROM zen_clients c WHERE c.id=$2 AND c.active=true AND c.expires_at>now() AND (t.access_tier='free' OR c.all_scripts OR EXISTS(SELECT 1 FROM zen_permissions p WHERE p.client_id=c.id AND p.script_id=t.id)))) ORDER BY updated_at DESC`,[s.role==='admin',s.client_id]);
       return json(rows.map(camel));
