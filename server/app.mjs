@@ -11,8 +11,8 @@ const textField = (v,name,min,max) => { if(typeof v!=='string'||v.trim().length<
 const bool = v => {if(typeof v!=='boolean')throw new ApiError(422,'قيمة اختيار غير صالحة.');return v;};
 const idCheck = id => {if(!UUID.test(id??''))throw new ApiError(404,'العنصر غير موجود.');return id;};
 const version = n => {if(!Number.isSafeInteger(n)||n<1)throw new ApiError(422,'حدّث الصفحة ثم أعد المحاولة.');return n;};
-function expiry(value) {const d=new Date(value);if(typeof value!=='string'||!Number.isFinite(+d)||+d>Date.now()+3650*86400000)throw new ApiError(422,'تاريخ انتهاء الاشتراك غير صالح.');return d.toISOString();}
-function clientDto(row) { const {code_hash,code_hint,...safe}=row;return {...camel(safe),maskedCode:'••••••'+code_hint,status:!row.active?'disabled':new Date(row.expires_at)<=new Date()?'expired':'active'}; }
+function expiry(value) {if(value===null)return null;const d=new Date(value);if(typeof value!=='string'||!Number.isFinite(+d)||+d>Date.now()+3650*86400000)throw new ApiError(422,'تاريخ انتهاء الاشتراك غير صالح.');return d.toISOString();}
+function clientDto(row) { const {code_hash,code_hint,...safe}=row;return {...camel(safe),maskedCode:'••••••'+code_hint,status:!row.active?'disabled':row.expires_at!==null&&new Date(row.expires_at)<=new Date()?'expired':'active'}; }
 async function body(req) {
   if(!req.headers.get('content-type')?.startsWith('application/json'))throw new ApiError(415,'صيغة الطلب غير مدعومة.');
   if(Number(req.headers.get('content-length'))>JSON_LIMIT)throw new ApiError(413,'الملف أكبر من الحد المسموح.');
@@ -49,13 +49,13 @@ export function createApp({db,env=process.env,logger=console}) {
     const token=tokenFrom(req);if(!/^[A-Za-z0-9_-]{43}$/.test(token))throw new ApiError(401,'سجّل الدخول للمتابعة.');
     const [s]=await query(c,`SELECT s.*,c.name,c.active,c.expires_at AS subscription_expires_at FROM zen_sessions s LEFT JOIN zen_clients c ON c.id=s.client_id WHERE token_hash=$1 AND s.expires_at>now()`,[sha256(token)]);
     if(!s)throw new ApiError(401,'انتهت الجلسة أو ألغتها الإدارة. سجّل الدخول مرة أخرى.');
-    if(s.role==='client'&&(!s.active||new Date(s.subscription_expires_at)<=new Date()))throw new ApiError(401,'الاشتراك منتهٍ أو موقوف. تواصل مع مشاري لتجديده.');
+    if(s.role==='client'&&(!s.active||s.subscription_expires_at!==null&&new Date(s.subscription_expires_at)<=new Date()))throw new ApiError(401,'الاشتراك منتهٍ أو موقوف. تواصل مع مشاري لتجديده.');
     await c.query('UPDATE zen_sessions SET last_seen_at=now() WHERE id=$1',[s.id]);
     return s;
   }
   const admin=s=>{if(s.role!=='admin')throw new ApiError(403,'هذه الصلاحية متاحة للإدارة فقط.');};
   async function accessible(c,s,id,includeFile=false){
-    const rows=await query(c,`SELECT ${scriptColumns}${includeFile?',file_data':''} FROM zen_scripts t WHERE id=$1 AND ($2::boolean OR (published=true AND EXISTS(SELECT 1 FROM zen_clients c WHERE c.id=$3 AND c.active=true AND c.expires_at>now() AND (t.access_tier='free' OR c.all_scripts OR EXISTS(SELECT 1 FROM zen_permissions p WHERE p.client_id=c.id AND p.script_id=t.id)))))`,[id,s.role==='admin',s.client_id]);
+    const rows=await query(c,`SELECT ${scriptColumns}${includeFile?',file_data':''} FROM zen_scripts t WHERE id=$1 AND ($2::boolean OR (published=true AND EXISTS(SELECT 1 FROM zen_clients c WHERE c.id=$3 AND c.active=true AND (c.expires_at IS NULL OR c.expires_at>now()) AND (t.access_tier='free' OR c.all_scripts OR EXISTS(SELECT 1 FROM zen_permissions p WHERE p.client_id=c.id AND p.script_id=t.id)))))`,[id,s.role==='admin',s.client_id]);
     if(!rows.length)throw new ApiError(404,'السكربت غير موجود أو غير متاح لاشتراكك.');return rows[0];
   }
   async function permissions(c,id,ids){
@@ -72,7 +72,7 @@ export function createApp({db,env=process.env,logger=console}) {
   }
   function parseClient(b,create){
     const name=textField(b.name,'اسم العميل',2,150), notes=textField(b.notes??'','الملاحظات',0,2000), expiresAt=expiry(b.expiresAt);
-    if(create&&new Date(expiresAt)<=new Date())throw new ApiError(422,'اختر مدة اشتراك تبدأ من الآن.');
+    if(create&&expiresAt!==null&&new Date(expiresAt)<=new Date())throw new ApiError(422,'اختر مدة اشتراك تبدأ من الآن.');
     if(!Number.isInteger(b.maxSessions)||b.maxSessions<1||b.maxSessions>5)throw new ApiError(422,'عدد الجلسات من 1 إلى 5.');
     return {name,notes,expiresAt,active:bool(b.active),allScripts:bool(b.allScripts),maxSessions:b.maxSessions,code:create||b.code?normalizeCode(b.code):null};
   }
@@ -103,7 +103,7 @@ export function createApp({db,env=process.env,logger=console}) {
       await limit('login-ip:'+ctx.ip,20,600);const b=await body(req),code=normalizeCode(b.code);
       return db.transaction(async c=>{
         const [r]=await query(c,'SELECT * FROM zen_clients WHERE code_hash=$1 FOR UPDATE',[codeHash(code,env.AUTH_PEPPER)]);
-        if(!r||!r.active||new Date(r.expires_at)<=new Date()){
+        if(!r||!r.active||r.expires_at!==null&&new Date(r.expires_at)<=new Date()){
           await audit(c,ctx,r?.name??'زائر',r?.id??null,'login_failed','رمز غير صالح أو اشتراك غير متاح');
           return json({error:'رمز الدخول غير صالح أو الاشتراك منتهٍ أو موقوف.'},401);
         }
@@ -152,10 +152,10 @@ export function createApp({db,env=process.env,logger=console}) {
     if(path==='/api/me/subscription'&&method==='GET'){
       if(s.role==='admin')return json({role:'admin',status:'owner',expiresAt:null,remainingDays:null});
       const [counts]=await query(db,`SELECT count(*)::int AS available FROM zen_scripts t WHERE published=true AND (access_tier='free' OR EXISTS(SELECT 1 FROM zen_clients c WHERE c.id=$1 AND (c.all_scripts OR EXISTS(SELECT 1 FROM zen_permissions p WHERE p.client_id=c.id AND p.script_id=t.id))))`,[s.client_id]);
-      return json({role:'client',name:s.name,status:'active',expiresAt:s.subscription_expires_at,remainingDays:Math.max(0,Math.ceil((new Date(s.subscription_expires_at)-Date.now())/86400000)),availableScripts:counts.available});
+      return json({role:'client',name:s.name,status:'active',expiresAt:s.subscription_expires_at,lifetime:s.subscription_expires_at===null,remainingDays:s.subscription_expires_at===null?null:Math.max(0,Math.ceil((new Date(s.subscription_expires_at)-Date.now())/86400000)),availableScripts:counts.available});
     }
     if(path==='/api/scripts'&&method==='GET'){
-      const rows=await query(db,`SELECT ${scriptColumns} FROM zen_scripts t WHERE $1::boolean OR (published=true AND EXISTS(SELECT 1 FROM zen_clients c WHERE c.id=$2 AND c.active=true AND c.expires_at>now() AND (t.access_tier='free' OR c.all_scripts OR EXISTS(SELECT 1 FROM zen_permissions p WHERE p.client_id=c.id AND p.script_id=t.id)))) ORDER BY updated_at DESC`,[s.role==='admin',s.client_id]);
+      const rows=await query(db,`SELECT ${scriptColumns} FROM zen_scripts t WHERE $1::boolean OR (published=true AND EXISTS(SELECT 1 FROM zen_clients c WHERE c.id=$2 AND c.active=true AND (c.expires_at IS NULL OR c.expires_at>now()) AND (t.access_tier='free' OR c.all_scripts OR EXISTS(SELECT 1 FROM zen_permissions p WHERE p.client_id=c.id AND p.script_id=t.id)))) ORDER BY updated_at DESC`,[s.role==='admin',s.client_id]);
       return json(rows.map(camel));
     }
     let match=path.match(/^\/api\/scripts\/([^/]+)(\/download)?$/);
@@ -173,17 +173,17 @@ export function createApp({db,env=process.env,logger=console}) {
     if(!path.startsWith('/api/admin/'))throw new ApiError(404,'الصفحة غير موجودة.');
     admin(s);
     if(path==='/api/admin/dashboard'&&method==='GET'){
-      const [r]=await query(db,`SELECT count(*)::int AS total,count(*) FILTER(WHERE active AND expires_at>now())::int AS active,
+      const [r]=await query(db,`SELECT count(*)::int AS total,count(*) FILTER(WHERE active AND (expires_at IS NULL OR expires_at>now()))::int AS active,
         count(*) FILTER(WHERE expires_at<=now())::int AS expired,count(*) FILTER(WHERE NOT active)::int AS disabled,
-        count(*) FILTER(WHERE active AND expires_at>now() AND expires_at<=now()+interval '7 days')::int AS expiring FROM zen_clients`);
-      const [online]=await query(db,`SELECT count(DISTINCT s.client_id)::int AS online FROM zen_sessions s JOIN zen_clients c ON c.id=s.client_id WHERE s.expires_at>now() AND s.last_seen_at>now()-interval '3 minutes' AND c.active AND c.expires_at>now()`);
+        count(*) FILTER(WHERE active AND (expires_at IS NULL OR expires_at>now()) AND expires_at<=now()+interval '7 days')::int AS expiring FROM zen_clients`);
+      const [online]=await query(db,`SELECT count(DISTINCT s.client_id)::int AS online FROM zen_sessions s JOIN zen_clients c ON c.id=s.client_id WHERE s.expires_at>now() AND s.last_seen_at>now()-interval '3 minutes' AND c.active AND (c.expires_at IS NULL OR c.expires_at>now())`);
       const [activity]=await query(db,"SELECT count(*) FILTER(WHERE action='login_success')::int AS logins,count(*) FILTER(WHERE action='download')::int AS downloads FROM zen_audit WHERE created_at>=date_trunc('day',now() AT TIME ZONE 'Asia/Riyadh') AT TIME ZONE 'Asia/Riyadh'");
-      const expiring=await query(db,"SELECT id,name,expires_at FROM zen_clients WHERE active AND expires_at>now() AND expires_at<=now()+interval '7 days' ORDER BY expires_at LIMIT 10");
+      const expiring=await query(db,"SELECT id,name,expires_at FROM zen_clients WHERE active AND (expires_at IS NULL OR expires_at>now()) AND expires_at<=now()+interval '7 days' ORDER BY expires_at LIMIT 10");
       return json({...r,...online,todayLogins:activity.logins,todayDownloads:activity.downloads,expiringClients:expiring.map(camel)});
     }
     if(path==='/api/admin/clients'&&method==='GET'){
       const page=Math.max(1,Math.min(10000,Number(url.searchParams.get('page'))||1)),search=(url.searchParams.get('q')??'').slice(0,150),status=url.searchParams.get('status')??'all';
-      const filter=`(name ILIKE $1 OR code_hint=$2) AND ($3='all' OR ($3='active' AND active AND expires_at>now()) OR ($3='expired' AND expires_at<=now()) OR ($3='disabled' AND NOT active) OR ($3='expiring' AND active AND expires_at>now() AND expires_at<now()+interval '7 days'))`;
+      const filter=`(name ILIKE $1 OR code_hint=$2) AND ($3='all' OR ($3='active' AND active AND (expires_at IS NULL OR expires_at>now())) OR ($3='expired' AND expires_at<=now()) OR ($3='disabled' AND NOT active) OR ($3='expiring' AND active AND (expires_at IS NULL OR expires_at>now()) AND expires_at<now()+interval '7 days'))`;
       const [count]=await query(db,`SELECT count(*)::int AS total FROM zen_clients WHERE ${filter}`,['%'+search+'%',search,status]);
       const rows=await query(db,`SELECT c.*,EXISTS(SELECT 1 FROM zen_sessions s WHERE s.client_id=c.id AND s.expires_at>now() AND s.last_seen_at>now()-interval '3 minutes') AS online FROM zen_clients c WHERE ${filter} ORDER BY created_at DESC,id LIMIT 20 OFFSET $4`,['%'+search+'%',search,status,(page-1)*20]);
       return json({items:rows.map(clientDto),total:count.total,page,pages:Math.max(1,Math.ceil(count.total/20))});
@@ -207,7 +207,7 @@ export function createApp({db,env=process.env,logger=console}) {
         const b=await body(req);version(b.revision);const newCode=b.code?normalizeCode(b.code):null;if(!Number.isInteger(b.days)||b.days<1||b.days>3650)throw new ApiError(422,'مدة التمديد من يوم إلى 3650 يومًا.');
         return db.transaction(async c=>{
           if(newCode){const [current]=await query(c,'SELECT code_hash FROM zen_clients WHERE id=$1 FOR UPDATE',[id]);if(current?.code_hash===codeHash(newCode,env.AUTH_PEPPER))throw new ApiError(422,'اختر رمزًا جديدًا مختلفًا عن الرمز الحالي.');}
-          const rows=await query(c,"UPDATE zen_clients SET expires_at=GREATEST(expires_at,now())+($1::int*interval '1 day'),active=true,revision=revision+1,code_hash=COALESCE($4,code_hash),code_hint=COALESCE($5,code_hint) WHERE id=$2 AND revision=$3 RETURNING name",[b.days,id,b.revision,newCode?codeHash(newCode,env.AUTH_PEPPER):null,newCode?.slice(-3)??null]);
+          const rows=await query(c,"UPDATE zen_clients SET expires_at=CASE WHEN expires_at IS NULL THEN NULL ELSE GREATEST(expires_at,now())+($1::int*interval '1 day') END,active=true,revision=revision+1,code_hash=COALESCE($4,code_hash),code_hint=COALESCE($5,code_hint) WHERE id=$2 AND revision=$3 RETURNING name",[b.days,id,b.revision,newCode?codeHash(newCode,env.AUTH_PEPPER):null,newCode?.slice(-3)??null]);
           if(!rows.length)throw new ApiError(409,'تغيرت بيانات العميل. حدّث القائمة قبل التمديد.');
           if(newCode){await c.query('DELETE FROM zen_sessions WHERE client_id=$1',[id]);await audit(c,ctx,'مشاري',id,'code_renewed','تم إصدار رمز تجديد وإلغاء الجلسات السابقة');}
           await audit(c,ctx,'مشاري',id,'subscription_extended',rows[0].name+' · '+b.days+' يوم');return json(await client(c,id));
@@ -220,7 +220,7 @@ export function createApp({db,env=process.env,logger=console}) {
             code_hash=COALESCE($7,code_hash),code_hint=COALESCE($8,code_hint) WHERE id=$9 AND revision=$10 RETURNING id`,[v.name,v.active,v.allScripts,v.expiresAt,v.maxSessions,v.notes,v.code?codeHash(v.code,env.AUTH_PEPPER):null,v.code?.slice(-3)??null,id,b.revision]);
           if(!rows.length)throw new ApiError(409,'تغيرت البيانات في جلسة أخرى. حدّث القائمة.');
           await permissions(c,id,b.allowedScriptIds??[]);
-          if(v.code||!v.active||new Date(v.expiresAt)<=new Date())await c.query('DELETE FROM zen_sessions WHERE client_id=$1',[id]);
+          if(v.code||!v.active||v.expiresAt!==null&&new Date(v.expiresAt)<=new Date())await c.query('DELETE FROM zen_sessions WHERE client_id=$1',[id]);
           else await c.query('DELETE FROM zen_sessions WHERE client_id=$1 AND id NOT IN(SELECT id FROM zen_sessions WHERE client_id=$1 ORDER BY created_at DESC LIMIT $2)',[id,v.maxSessions]);
           await audit(c,ctx,'مشاري',id,'client_updated',v.name+(v.code?' · تغيير رمز الدخول':''));return json(await client(c,id));
         });
@@ -239,7 +239,7 @@ export function createApp({db,env=process.env,logger=console}) {
       return json({items:rows.map(camel),total:count.total,page,pages:Math.max(1,Math.ceil(count.total/30))});
     }
     if(path==='/api/admin/sessions'&&method==='GET'){
-      const rows=await query(db,`SELECT s.id,s.client_id,c.name,s.role,s.created_at,s.last_seen_at,s.expires_at,s.ip_hint,s.device FROM zen_sessions s LEFT JOIN zen_clients c ON c.id=s.client_id WHERE s.expires_at>now() AND (s.role='admin' OR (c.active AND c.expires_at>now())) ORDER BY s.last_seen_at DESC LIMIT 200`);
+      const rows=await query(db,`SELECT s.id,s.client_id,c.name,s.role,s.created_at,s.last_seen_at,s.expires_at,s.ip_hint,s.device FROM zen_sessions s LEFT JOIN zen_clients c ON c.id=s.client_id WHERE s.expires_at>now() AND (s.role='admin' OR (c.active AND (c.expires_at IS NULL OR c.expires_at>now()))) ORDER BY s.last_seen_at DESC LIMIT 200`);
       return json(rows.map(camel));
     }
     match=path.match(/^\/api\/admin\/sessions\/([^/]+)$/);

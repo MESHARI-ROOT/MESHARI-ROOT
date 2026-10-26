@@ -86,3 +86,16 @@ test('subscription summary counts only published accessible files and rejects ex
  await pg.query("UPDATE zen_clients SET expires_at=now()-interval '1 second' WHERE id=$1",[c.id]);
  assert.equal((await call('/me/subscription',{cookie:session.cookie})).status,401);
 });
+test('lifetime subscriptions remain active, include future paid files and are still revocable',async()=>{
+ const c=await createClient({expiresAt:null,allScripts:true});assert.equal(c.expiresAt,null);assert.equal(c.status,'active');
+ const session=await clientLogin(c.input.code);assert.equal(session.status,200);
+ const details=await call('/me/subscription',{cookie:session.cookie});assert.equal(details.json.lifetime,true);assert.equal(details.json.remainingDays,null);
+ const future=await script({accessTier:'paid'});
+ assert.equal((await call('/scripts/'+future.id+'/download',{cookie:session.cookie})).status,200);
+ const active=await call('/admin/clients?status=active&q='+encodeURIComponent(c.name));assert.ok(active.json.items.some(x=>x.id===c.id));
+ const expired=await call('/admin/clients?status=expired');assert.ok(!expired.json.items.some(x=>x.id===c.id));
+ const extended=await call('/admin/clients/'+c.id+'/extend',{method:'POST',data:{days:30,revision:c.revision}});assert.equal(extended.status,200);assert.equal(extended.json.expiresAt,null);
+ const stop=await call('/admin/clients/'+c.id,{method:'PUT',data:{...c.input,code:'',active:false,revision:extended.json.revision}});assert.equal(stop.status,200);
+ assert.equal((await call('/scripts/'+future.id+'/download',{cookie:session.cookie})).status,401);
+ assert.equal((await clientLogin(c.input.code)).status,401);
+});

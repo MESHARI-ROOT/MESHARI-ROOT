@@ -2,6 +2,7 @@ export const $=(selector,root=document)=>root.querySelector(selector);
 export const $$=(selector,root=document)=>[...root.querySelectorAll(selector)];
 export const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export const date=(value,short=false)=>value?new Intl.DateTimeFormat('ar-SA-u-ca-gregory',{dateStyle:'medium',...(!short?{timeStyle:'short'}:{}),timeZone:'Asia/Riyadh'}).format(new Date(value)):'لم يسجّل دخولًا';
+export const subscriptionExpiry=value=>value===null?'مدى الحياة':date(value);
 export const daysLeft=value=>Math.max(0,Math.ceil((new Date(value)-Date.now())/86400000));
 export const size=value=>value<1024?`${value} B`:value<1048576?`${(value/1024).toFixed(1)} KB`:`${(value/1048576).toFixed(2)} MB`;
 export function riyadhInput(value){const parts=new Intl.DateTimeFormat('en-CA',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23',timeZone:'Asia/Riyadh'}).formatToParts(new Date(value));const p=Object.fromEntries(parts.map(x=>[x.type,x.value]));return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;}
