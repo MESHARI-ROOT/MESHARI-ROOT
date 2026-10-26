@@ -1,3 +1,4 @@
+import {renderStation} from './station.js';
 import {renderVisualGuide} from './visual-guide.js';
 import {$,$$,escape as e,icon,date,daysLeft,size,api,toast,submit,empty,spinner,downloadScript} from './ui.js';
 import {mascot,startMotion} from './motion.js';
@@ -65,6 +66,7 @@ function guide(){main.innerHTML=`<div class="page-title"><div><span class="eyebr
 async function route(){
   const version=++routeVersion;const [path,query='']=(location.hash.slice(1)||'home').split('?'),[view,id]=path.split('/');renderHeader();
   document.body.classList.remove('login-screen');
+  if(view==='home'){renderShell('home');renderStation();return;}
   if(['setup-install','setup-update'].includes(view)){renderShell(view);renderVisualGuide(view==='setup-update'?'update':'install',device);return;}
   if(['catalog','free','paid','cod7','free-script'].includes(view)||(!me&&view==='home')){
     renderShell('catalog');main.innerHTML=spinner();

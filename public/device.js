@@ -1,6 +1,7 @@
+import {platformSupport} from './platform.js';
 export class ZenDevice {
   constructor(hid=globalThis.navigator?.hid,onChange=()=>{}){this.hid=hid;this.device=null;this.onChange=onChange;hid?.addEventListener('disconnect',event=>{if(event.device===this.device){this.device=null;onChange('disconnected');}});}
-  get supported(){return !!this.hid&&globalThis.isSecureContext!==false;}
+  get supported(){return !!this.hid&&globalThis.isSecureContext!==false&&!platformSupport().mobile;}
   async connect(){
     if(!this.supported)throw new Error('فحص USB متاح في Chrome أو Edge على الكمبيوتر عبر HTTPS. تستطيع متابعة الخطوات باستخدام أداة Cronus الرسمية.');
     const devices=await this.hid.requestDevice({filters:[]});
