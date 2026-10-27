@@ -12,10 +12,13 @@
     "check": "node scripts/check.mjs",
     "setup": "node scripts/setup.mjs",
     "dev": "netlify dev",
-    "deploy": "netlify deploy --build --prod"
+    "deploy": "netlify deploy --build --prod",
+    "start": "node server/start.mjs",
+    "transfer-db": "node scripts/transfer-database.mjs"
   },
   "dependencies": {
-    "@netlify/database": "2.0.1"
+    "@netlify/database": "2.0.1",
+    "pg": "8.23.1"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.2.17",
