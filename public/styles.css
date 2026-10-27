@@ -42,3 +42,19 @@ body.reduced .station-brand .logo-float{animation:none!important}
 
 /* Visible, non-interactive star field behind the page content. */
 body{isolation:isolate}#stars{position:fixed;inset:0;width:100%;height:100%;z-index:0;opacity:.8;pointer-events:none}#header,#shell,#footer{position:relative;z-index:1}.space-halo{pointer-events:none}body.reduced #stars{opacity:.55}
+
+/* Original identity intro: spacecraft, logo descent, then hand greeting. */
+.intro .space-scene{height:min(690px,88svh)}
+.intro .skip-intro{top:max(18px,env(safe-area-inset-top));left:max(18px,env(safe-area-inset-left));min-height:48px;z-index:3}
+.intro .ship{animation:identity-ship 6.3s both}
+.intro .beam,.intro .portal{animation:identity-beam 6.3s both}
+.intro .alien-arrival{animation:identity-arrival 6.3s both}
+.intro .alien-arrival .hand-layer{animation:identity-greeting 6.3s both}
+.intro .intro-text{animation:identity-caption 6.3s both;padding:0 16px}
+.intro .intro-text strong{font-size:clamp(18px,4.5vw,28px);font-style:normal;letter-spacing:1px}
+@keyframes identity-ship{0%{opacity:0;transform:translate(320px,-150px)}18%,65%{opacity:1;transform:translate(0,0)}85%,100%{opacity:0;transform:translate(-420px,-230px)}}
+@keyframes identity-beam{0%,18%,76%,100%{opacity:0}28%,62%{opacity:1}}
+@keyframes identity-arrival{0%,26%{opacity:0;transform:translateY(-140px) scale(.16)}49%,92%{opacity:1;transform:translateY(0) scale(1)}100%{opacity:1;transform:translateY(-5px) scale(1)}}
+@keyframes identity-greeting{0%,51%,87%,100%{transform:rotate(0)}57%,69%,81%{transform:rotate(9deg)}63%,75%{transform:rotate(-7deg)}}
+@keyframes identity-caption{0%,48%{opacity:0;transform:translateY(12px)}61%,100%{opacity:1;transform:translateY(0)}}
+@media(max-height:560px){.intro .space-scene{height:86svh}.intro .alien-arrival{width:180px;left:calc(50% - 90px);top:25%}.intro .alien-arrival .mascot{width:180px;height:180px}.intro .ship{width:170px;left:calc(50% - 85px);top:0}.intro .intro-text p{margin-top:0}.intro .intro-text .eyebrow{margin-bottom:0}}
