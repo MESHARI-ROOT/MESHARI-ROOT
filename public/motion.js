@@ -31,7 +31,7 @@ export function startMotion(){
     function draw(now){
       requestAnimationFrame(draw);if(document.hidden||now-last<(reduced?1000:40))return;last=now;
       const t=reduced?0:now/1000;
-      document.querySelectorAll('.hand-flex').forEach(el=>{const inIntro=!!el.closest('#intro');const elapsed=(now-introStarted)/1000;const greeting=inIntro?(elapsed>3.5&&elapsed<6.5?Math.sin((elapsed-3.5)*5)*24:0):Math.sin(t*1.8)*14;el.setAttribute('scale',String(reduced?0:greeting));});
+      document.querySelectorAll('.hand-flex').forEach(el=>{const inIntro=!!el.closest('#intro');const elapsed=(now-introStarted)/1000;const phase=Math.max(0,Math.min(1,(elapsed-3.5)/3.3));const greeting=inIntro?10*Math.sin(Math.PI*phase)**2*Math.sin(2*Math.PI*phase):6*Math.sin(t*Math.PI/4);el.setAttribute('scale',String(reduced?0:greeting));});
       ctx.clearRect(0,0,w,h);
       const count=w<600?85:150;
       for(const s of stars.slice(0,count)){const x=((s.x+t*s.speed*.3)%1)*w,y=((s.y+t*s.speed)%1)*h;
