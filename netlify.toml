@@ -6,6 +6,8 @@
 [build.environment]
   NODE_VERSION = "22"
   NPM_VERSION = "11.9.0"
+  # Public admin username also appears in the brand; authentication secrets stay scanned.
+  SECRETS_SCAN_OMIT_KEYS = "ADMIN_USER"
 
 [functions]
   node_bundler = "esbuild"
