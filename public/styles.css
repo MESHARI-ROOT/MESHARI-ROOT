@@ -43,18 +43,13 @@ body.reduced .station-brand .logo-float{animation:none!important}
 /* Visible, non-interactive star field behind the page content. */
 body{isolation:isolate}#stars{position:fixed;inset:0;width:100%;height:100%;z-index:0;opacity:.8;pointer-events:none}#header,#shell,#footer{position:relative;z-index:1}.space-halo{pointer-events:none}body.reduced #stars{opacity:.55}
 
-/* Original identity intro: spacecraft, logo descent, then hand greeting. */
-.intro .space-scene{height:min(690px,88svh)}
-.intro .skip-intro{top:max(18px,env(safe-area-inset-top));left:max(18px,env(safe-area-inset-left));min-height:48px;z-index:3}
-.intro .ship{animation:identity-ship 6.3s both}
-.intro .beam,.intro .portal{animation:identity-beam 6.3s both}
-.intro .alien-arrival{animation:identity-arrival 6.3s both}
-.intro .alien-arrival .hand-layer{animation:identity-greeting 6.3s both}
-.intro .intro-text{animation:identity-caption 6.3s both;padding:0 16px}
-.intro .intro-text strong{font-size:clamp(18px,4.5vw,28px);font-style:normal;letter-spacing:1px}
-@keyframes identity-ship{0%{opacity:0;transform:translate(320px,-150px)}18%,65%{opacity:1;transform:translate(0,0)}85%,100%{opacity:0;transform:translate(-420px,-230px)}}
-@keyframes identity-beam{0%,18%,76%,100%{opacity:0}28%,62%{opacity:1}}
-@keyframes identity-arrival{0%,26%{opacity:0;transform:translateY(-140px) scale(.16)}49%,92%{opacity:1;transform:translateY(0) scale(1)}100%{opacity:1;transform:translateY(-5px) scale(1)}}
-@keyframes identity-greeting{0%,51%,87%,100%{transform:rotate(0)}57%,69%,81%{transform:rotate(9deg)}63%,75%{transform:rotate(-7deg)}}
-@keyframes identity-caption{0%,48%{opacity:0;transform:translateY(12px)}61%,100%{opacity:1;transform:translateY(0)}}
-@media(max-height:560px){.intro .space-scene{height:86svh}.intro .alien-arrival{width:180px;left:calc(50% - 90px);top:25%}.intro .alien-arrival .mascot{width:180px;height:180px}.intro .ship{width:170px;left:calc(50% - 85px);top:0}.intro .intro-text p{margin-top:0}.intro .intro-text .eyebrow{margin-bottom:0}}
+/* Arrival sequence: fly in, beam down, wave, then reveal the station. */
+body.intro-open{overflow:hidden}.intro{background:radial-gradient(ellipse at 50% 45%,#352b1338,transparent 65%),#030508;min-height:100dvh}.intro::before{content:'';position:absolute;inset:0;opacity:.5;background-image:radial-gradient(circle at 12% 25%,#d8e5f0 1px,transparent 1.8px),radial-gradient(circle at 80% 18%,#e5d39c 1px,transparent 2px),radial-gradient(circle at 32% 75%,#bdcddd 1px,transparent 1.8px),radial-gradient(circle at 75% 65%,#bdcddd 1px,transparent 1.8px);background-size:240px 230px,340px 280px,300px 370px,440px 320px;pointer-events:none}.intro .skip-intro{top:max(20px,env(safe-area-inset-top));left:max(20px,env(safe-area-inset-left));min-height:46px;padding:12px 20px;background:#101218e8;border-color:#8c783b88;color:#f0d68a;z-index:5}.intro .space-scene{width:min(900px,100vw);height:min(720px,85dvh);min-height:420px}.intro .ship{width:260px;left:calc(50% - 130px);top:2%;animation:intro-flight 7s ease-in-out both;filter:drop-shadow(0 0 28px #dcc46b66)}.intro .beam{top:12%;left:17%;width:66%;height:60%;background:linear-gradient(#f6de8a66,#dcc1740a);animation:intro-beam 7s both}.intro .portal{top:72%;animation:intro-beam 7s both}.intro .alien-arrival{top:27%;width:300px;left:calc(50% - 150px);animation:intro-descent 7s cubic-bezier(.2,.7,.3,1) both}.intro .alien-arrival .mascot{width:300px;height:300px}.intro .alien-arrival .hand-layer{animation:intro-wave 2.7s ease-in-out 3.5s both}.intro .intro-text{bottom:0;padding:12px 18px;animation:intro-title 7s both}.intro-text strong{font-size:clamp(19px,4vw,28px);font-style:normal;letter-spacing:1px}.intro-text .eyebrow{letter-spacing:1px;font-family:Tahoma,sans-serif;font-size:11px}.intro-progress{height:2px;width:110px;background:#e0c16a20;margin:22px auto 0;overflow:hidden;border-radius:4px}.intro-progress span{display:block;width:100%;height:100%;background:#e0c16a;transform-origin:right;animation:intro-progress 7s linear both}.intro-orbit{position:absolute;width:min(600px,85vw);aspect-ratio:1;border:1px solid #d8be6a13;border-radius:50%;box-shadow:0 0 100px #d9b94508;pointer-events:none}
+@keyframes intro-flight{0%{opacity:0;transform:translate(390px,-170px) scale(.55)}8%{opacity:1}22%,68%{opacity:1;transform:translate(0,0) scale(1)}83%,100%{opacity:0;transform:translate(-420px,-250px) scale(.6)}}
+@keyframes intro-beam{0%,21%,76%,100%{opacity:0}30%,63%{opacity:1}}
+@keyframes intro-descent{0%,26%{opacity:0;transform:translateY(-170px) scale(.08)}30%{opacity:.5}52%,92%{opacity:1;transform:translateY(0) scale(1)}100%{opacity:1;transform:translateY(-4px) scale(1)}}
+@keyframes intro-wave{0%,100%{transform:rotate(0)}15%,45%,75%{transform:rotate(11deg)}30%,60%,90%{transform:rotate(-8deg)}}
+@keyframes intro-title{0%,43%{opacity:0;transform:translateY(12px)}58%,100%{opacity:1;transform:translateY(0)}}
+@keyframes intro-progress{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+@media(max-width:600px){.intro .space-scene{height:min(650px,82dvh);min-height:420px}.intro .ship{width:210px;left:calc(50% - 105px)}.intro .alien-arrival{width:240px;left:calc(50% - 120px);top:28%}.intro .alien-arrival .mascot{width:240px;height:240px}.intro .skip-intro{font-size:12px}.intro .portal{top:73%}}
+@media(max-height:570px) and (min-width:601px){.intro .space-scene{min-height:320px;height:90dvh}.intro .ship{width:170px;left:calc(50% - 85px)}.intro .alien-arrival{width:180px;left:calc(50% - 90px);top:24%}.intro .alien-arrival .mascot{width:180px;height:180px}.intro-text p{margin:4px}.intro-progress{margin-top:8px}}
