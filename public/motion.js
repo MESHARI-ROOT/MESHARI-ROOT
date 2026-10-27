@@ -1,14 +1,12 @@
 import {$} from './ui.js';
-// A single image is smoothly deformed at the raised hand. No cut-out copies,
-// exposed wrist seams, or rotating fragments of the shield.
-const handMap='data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1000"><defs><radialGradient id="h" cx="86%" cy="18%" r="21%"><stop offset="0" stop-color="#ff8080"/><stop offset=".45" stop-color="#e08080"/><stop offset="1" stop-color="#808080"/></radialGradient></defs><rect width="1000" height="1000" fill="url(#h)"/></svg>');
-export function mascot(id){return `<svg class="mascot" viewBox="0 0 1000 1000" role="img" aria-label="شعار MESHARI الفضائي"><defs><filter id="greeting-${id}" x="-5%" y="-5%" width="110%" height="110%" color-interpolation-filters="sRGB"><feImage href="${handMap}" x="0" y="0" width="1000" height="1000" preserveAspectRatio="none" result="hand-map"/><feDisplacementMap class="hand-flex" in="SourceGraphic" in2="hand-map" scale="0" xChannelSelector="R" yChannelSelector="G"/></filter></defs><image href="/assets/meshari-mascot.png" width="1000" height="1000" filter="url(#greeting-${id})"/></svg>`;}
+// Keep the original logo intact and static; arrival motion applies to its container.
+export function mascot(){return `<svg class="mascot" viewBox="0 0 1000 1000" role="img" aria-label="شعار MESHARI الفضائي"><image href="/assets/meshari-mascot.png" width="1000" height="1000"/></svg>`;}
 export function startMotion(){
   let reduced=matchMedia('(prefers-reduced-motion:reduce)').matches;try{reduced=localStorage.getItem('zen-reduce')==='1'||reduced;}catch{}
-  const intro=$('#intro'),button=$('#motion-button');let timer,priorFocus,introStarted=0;
+  const intro=$('#intro'),button=$('#motion-button');let timer,priorFocus;
   const setReduced=()=>{document.body.classList.toggle('reduced',reduced);button.setAttribute('aria-pressed',String(reduced));button.textContent=reduced?'الحركة مخفّضة':'تقليل الحركة';};
   function close(){clearTimeout(timer);intro.hidden=true;document.body.classList.remove('intro-open');['#header','#shell','#footer'].forEach(s=>$(s).inert=false);if(priorFocus?.isConnected)priorFocus.focus();}
-  function play(){clearTimeout(timer);if(reduced)return;priorFocus=document.activeElement;introStarted=performance.now();intro.hidden=false;document.body.classList.add('intro-open');$('#arrival-logo').innerHTML=mascot('arrival');['#header','#shell','#footer'].forEach(s=>$(s).inert=true);$('#skip-intro').focus();intro.querySelectorAll('.ship,.beam,.portal,.alien-arrival,.hand-layer,.intro-text,.intro-progress span').forEach(el=>{el.getAnimations().forEach(a=>{a.cancel();a.play();});});timer=setTimeout(close,7200);}
+  function play(){clearTimeout(timer);if(reduced)return;priorFocus=document.activeElement;intro.hidden=false;document.body.classList.add('intro-open');$('#arrival-logo').innerHTML=mascot('arrival');['#header','#shell','#footer'].forEach(s=>$(s).inert=true);$('#skip-intro').focus();intro.querySelectorAll('.ship,.beam,.portal,.alien-arrival,.intro-text,.intro-progress span').forEach(el=>{el.getAnimations().forEach(a=>{a.cancel();a.play();});});timer=setTimeout(close,7200);}
   setReduced();button.onclick=()=>{reduced=!reduced;try{localStorage.setItem('zen-reduce',reduced?'1':'0');}catch{}setReduced();if(reduced)close();};
   $('#skip-intro').onclick=close;$('#replay-intro').onclick=()=>{if(reduced){reduced=false;setReduced();}play();};
   document.addEventListener('keydown',e=>{if(!intro.hidden){if(e.key==='Escape')close();if(e.key==='Tab'){e.preventDefault();$('#skip-intro').focus();}}});
@@ -31,7 +29,6 @@ export function startMotion(){
     function draw(now){
       requestAnimationFrame(draw);if(document.hidden||now-last<(reduced?1000:40))return;last=now;
       const t=reduced?0:now/1000;
-      document.querySelectorAll('.hand-flex').forEach(el=>{const inIntro=!!el.closest('#intro');const elapsed=(now-introStarted)/1000;const phase=Math.max(0,Math.min(1,(elapsed-3.5)/3.3));const greeting=inIntro?10*Math.sin(Math.PI*phase)**2*Math.sin(2*Math.PI*phase):6*Math.sin(t*Math.PI/4);el.setAttribute('scale',String(reduced?0:greeting));});
       ctx.clearRect(0,0,w,h);
       const count=w<600?85:150;
       for(const s of stars.slice(0,count)){const x=((s.x+t*s.speed*.3)%1)*w,y=((s.y+t*s.speed)%1)*h;

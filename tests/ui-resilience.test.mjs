@@ -18,8 +18,8 @@ test('stalled API request times out with an actionable error',async()=>{
  const old=globalThis.fetch;globalThis.fetch=async(_url,{signal})=>new Promise((_resolve,reject)=>signal.addEventListener('abort',()=>reject(new DOMException('aborted','AbortError')),{once:true}));
  try{await assert.rejects(api('/health',{timeoutMs:5}),error=>error.status===503&&error.message.includes('وقتًا طويلًا'));}finally{globalThis.fetch=old;}
 });
-test('logo contains a single source image instead of overlapping cut-out hands',()=>{
- const dom=new JSDOM(mascot('fixture'));try{assert.equal(dom.window.document.querySelectorAll('image').length,1);assert.equal(dom.window.document.querySelectorAll('clipPath,.hand-layer').length,0);assert.equal(dom.window.document.querySelectorAll('feDisplacementMap').length,1);}finally{dom.window.close();}
+test('logo is a static original image without hand filters or cut-out layers',()=>{
+ const dom=new JSDOM(mascot('fixture'));try{assert.equal(dom.window.document.querySelectorAll('image').length,1);assert.equal(dom.window.document.querySelectorAll('clipPath,.hand-layer').length,0);assert.equal(dom.window.document.querySelectorAll('filter,feDisplacementMap,.hand-flex').length,0);}finally{dom.window.close();}
 });
 test('download timeout also covers a stalled file body',async()=>{
  const old=globalThis.fetch;globalThis.fetch=async(_url,{signal})=>new Response(new ReadableStream({start(controller){signal.addEventListener('abort',()=>controller.error(new DOMException('aborted','AbortError')),{once:true});}}));
