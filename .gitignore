@@ -6,3 +6,8 @@ node_modules/
 dist/
 test-results/
 *.log
+
+.wrangler/
+.dev.vars
+.dev.vars.*
+*private-backup*.json

@@ -6,10 +6,17 @@ import {readFile,readdir} from 'node:fs/promises';
 import {PGlite} from '@electric-sql/pglite';
 import {createApp} from '../server/app.mjs';
 import {passwordHash,normalizeCode,verifyPassword,sha256} from '../server/security.mjs';
-const pg=new PGlite();for(const file of (await readdir('netlify/database/migrations')).filter(f=>f.endsWith('.sql')).sort())await pg.exec(await readFile('netlify/database/migrations/'+file,'utf8'));
-// Isolate access-control fixtures from catalog seed migrations in this in-memory database.
-await pg.exec('DELETE FROM zen_scripts');
-const db={query:(sql,p=[])=>pg.query(sql,p),transaction:fn=>pg.transaction(fn)};
+let pg,db;
+if(process.env.ZEN_TEST_SQLITE==='1'){
+ const {DatabaseSync}=await import('node:sqlite');const {sqliteDatabase}=await import('../cloudflare/sqlite.mjs');const {schema}=await import('../cloudflare/schema.mjs');
+ const sqlite=new DatabaseSync(':memory:');sqlite.exec('PRAGMA foreign_keys=ON;'+schema);
+ const storage={sql:{exec(sql,...args){const statement=sqlite.prepare(sql);return {toArray:()=>statement.all(...args)};}},async transaction(fn){sqlite.exec('BEGIN');try{const value=await fn();sqlite.exec('COMMIT');return value;}catch(error){sqlite.exec('ROLLBACK');throw error;}}};
+ pg={close:()=>sqlite.close(),query:async(sql,args)=>{const {translate}=await import('../cloudflare/sqlite.mjs');const q=translate(sql,args);return {rows:sqlite.prepare(q.sql).all(...q.bindings)};}};db=sqliteDatabase(storage);
+}else{
+ pg=new PGlite();for(const file of (await readdir('netlify/database/migrations')).filter(f=>f.endsWith('.sql')).sort())await pg.exec(await readFile('netlify/database/migrations/'+file,'utf8'));
+ await pg.exec('DELETE FROM zen_scripts');
+ db={query:(sql,p=[])=>pg.query(sql,p),transaction:fn=>pg.transaction(fn)};
+}
 const env={AUTH_PEPPER:randomBytes(48).toString('hex'),ADMIN_USER:'meshari',ADMIN_PASSWORD_HASH:await passwordHash(initialPassword)};
 const errors=[];const app=createApp({db,env,logger:{error:(...v)=>errors.push(v)}});
 let adminCookie,seq=100000000;

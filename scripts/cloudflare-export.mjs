@@ -1,0 +1,7 @@
+import {writeFile} from 'node:fs/promises';
+import {resolve,sep} from 'node:path';
+import {postgresDatabase} from '../server/postgres.mjs';
+import {sha256} from '../server/security.mjs';
+const output=process.env.MIGRATION_OUTPUT_PATH;if(!output||resolve(output).startsWith(resolve('.')+sep))throw new Error('Choose a private output path outside this repository');
+if(!process.env.SOURCE_DATABASE_URL||(process.env.AUTH_PEPPER||'').length<32)throw new Error('Source database and original pepper required');
+const db=postgresDatabase(process.env.SOURCE_DATABASE_URL);try{const bundle=await db.transaction(async c=>{await c.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');const tables={},counts={};for(const name of ['zen_admin','zen_clients','zen_scripts','zen_permissions','zen_audit']){const {rows}=await c.query('SELECT * FROM '+name);tables[name]=rows.map(row=>{if(name==='zen_scripts'){const bytes=Buffer.from(row.file_data);if(bytes.length>1800000||sha256(bytes)!==row.sha256)throw new Error('FILE_INTEGRITY_FAILED');return {...row,file_data:{base64:bytes.toString('base64')}};}return row;});counts[name]=rows.length;}return {format:'meshari-cloudflare-v1',pepperFingerprint:sha256(process.env.AUTH_PEPPER),tables,counts};});await writeFile(output,JSON.stringify(bundle),{mode:0o600,flag:'wx'});console.log('Private backup verified',bundle.counts);}catch(error){console.error('EXPORT_FAILED',{code:error.code||'validation'});process.exitCode=1;}finally{await db.close();}

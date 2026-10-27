@@ -87,7 +87,7 @@ export function createApp({db,env=process.env,logger=console}) {
       data.fileName=textField(b.fileName,'اسم الملف',1,180);
       if(/[\x00-\x1f\/\\]/.test(data.fileName)||! /\.(gpc|gpc2|txt|bin|zpk|zip)$/i.test(data.fileName))throw new ApiError(422,'ارفع ملف gpc أو gpc2 أو txt أو bin أو zpk أو zip.');
       if(typeof b.fileBase64!=='string'||! /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(b.fileBase64))throw new ApiError(422,'محتوى الملف غير صالح.');
-      data.file=Buffer.from(b.fileBase64,'base64');if(!data.file.length||data.file.length>FILE_LIMIT)throw new ApiError(413,'الحد الأقصى للملف 2 ميجابايت.');
+      data.file=Buffer.from(b.fileBase64,'base64');if(!data.file.length||data.file.length>Number(env.ZEN_MAX_FILE_BYTES||FILE_LIMIT))throw new ApiError(413,env.ZEN_MAX_FILE_BYTES?'الحد الأقصى للملف في هذه الاستضافة 1.8 ميجابايت.':'الحد الأقصى للملف 2 ميجابايت.');
       data.sha256=sha256(data.file);
     }return data;
   }
@@ -182,7 +182,7 @@ export function createApp({db,env=process.env,logger=console}) {
       return json({...r,...online,todayLogins:activity.logins,todayDownloads:activity.downloads,expiringClients:expiring.map(camel)});
     }
     if(path==='/api/admin/clients'&&method==='GET'){
-      const page=Math.max(1,Math.min(10000,Number(url.searchParams.get('page'))||1)),search=(url.searchParams.get('q')??'').slice(0,150),status=url.searchParams.get('status')??'all';
+      const page=Math.max(1,Math.min(10000,Number(url.searchParams.get('page'))||1)),search=Array.from(url.searchParams.get('q')??'').slice(0,Number(env.ZEN_SEARCH_MAX_CHARS||150)).join(''),status=url.searchParams.get('status')??'all';
       const filter=`(name ILIKE $1 OR code_hint=$2) AND ($3='all' OR ($3='active' AND active AND (expires_at IS NULL OR expires_at>now())) OR ($3='expired' AND expires_at<=now()) OR ($3='disabled' AND NOT active) OR ($3='expiring' AND active AND (expires_at IS NULL OR expires_at>now()) AND expires_at<now()+interval '7 days'))`;
       const [count]=await query(db,`SELECT count(*)::int AS total FROM zen_clients WHERE ${filter}`,['%'+search+'%',search,status]);
       const rows=await query(db,`SELECT c.*,EXISTS(SELECT 1 FROM zen_sessions s WHERE s.client_id=c.id AND s.expires_at>now() AND s.last_seen_at>now()-interval '3 minutes') AS online FROM zen_clients c WHERE ${filter} ORDER BY created_at DESC,id LIMIT 20 OFFSET $4`,['%'+search+'%',search,status,(page-1)*20]);
