@@ -1,5 +1,5 @@
 import {priceLabel} from './catalog.js';
-import {$,$$,escape as e,icon,date,daysLeft,size,riyadhInput,expiryFromInput,subscriptionExpiry,api,toast,modal,confirmAction,submit,empty,csvDownload,actions,statusBadge} from './ui.js';
+import {viewGuard,$,$$,escape as e,icon,date,daysLeft,size,riyadhInput,expiryFromInput,subscriptionExpiry,api,toast,modal,confirmAction,submit,empty,csvDownload,actions,statusBadge} from './ui.js';
 const main=()=>$('#main');
 const listState={page:1,q:'',status:'all'},logState={page:1,action:'',clientId:''};
 let scripts=[];
@@ -20,7 +20,9 @@ export async function renderAdmin(view,query='',logout=()=>{}){
   if(view==='settings')return settings(logout);
 }
 async function dashboard(){
+  const current=viewGuard();
   const [stats,log]=await Promise.all([api('/admin/dashboard'),api('/admin/audit')]);
+  if(!current())return;
   main().innerHTML=title('لوحة المالك','حيّاك مشاري 👋','اشتراكات عملائك ونشاطهم، من مكان واحد.',button('إضافة عميل','add-client',true)+refreshButton)+
   `<div class="metrics">${[['إجمالي العملاء',stats.total,'users',`${stats.disabled} حساب موقوف`],['اشتراكات نشطة',stats.active,'shield',`${stats.expired} اشتراك منتهٍ`],['تنتهي خلال 7 أيام',stats.expiring,'clock','تابع التجديد قبل انتهاء المدة'],['نشاط حديث',stats.online,'activity','عملاء نشطوا خلال آخر 3 دقائق']].map(([label,value,ic,note],i)=>`<article class="metric ${i===1?'accent':''}"><div class="metric-label">${label}${icon(ic)}</div><strong>${value}</strong><small>${note}</small></article>`).join('')}</div>
   <div class="notice neutral row between"><span>اليوم بتوقيت السعودية: <b>${stats.todayLogins}</b> عملية دخول · <b>${stats.todayDownloads}</b> تنزيل</span><span class="small">آخر تحديث: ${date(new Date())}</span></div>
@@ -29,7 +31,9 @@ async function dashboard(){
   $('#add-client').onclick=safely(()=>editClient(null,dashboard));$('#refresh-page').onclick=safely(dashboard);$$('[data-edit]').forEach(el=>el.onclick=safely(()=>editClient(el.dataset.edit,dashboard)));
 }
 async function clients(){
+  const current=viewGuard();
   const params=new URLSearchParams(listState),data=await api('/admin/clients?'+params);
+  if(!current())return;
   main().innerHTML=title('العملاء والاشتراكات','العملاء والاشتراكات','أنت تحدد الرمز، المدة، والسكربتات المسموحة لكل عميل.',button('إضافة عميل','add-client',true)+refreshButton)+
   `<div class="toolbar"><form class="search-form" id="client-search"><input class="control" name="q" aria-label="البحث عن عميل" placeholder="اسم العميل أو آخر 3 أرقام من رمزه…" value="${e(listState.q)}"><button class="button ghost" aria-label="بحث">${icon('search')}</button></form><select class="control" id="client-status" aria-label="حالة الاشتراك">${[['all','جميع الحالات'],['active','نشط'],['expiring','قارب على الانتهاء'],['expired','منتهي'],['disabled','موقوف']].map(([v,t])=>`<option value="${v}" ${v===listState.status?'selected':''}>${t}</option>`).join('')}</select><button class="button ghost small" id="export-clients">${icon('download')}تصدير النتائج</button></div>
   ${data.items.length?`<div class="table-wrap"><table><thead><tr><th>العميل</th><th>رمز الدخول</th><th>الاشتراك</th><th>ينتهي في</th><th>آخر دخول</th><th>إدارة</th></tr></thead><tbody>${data.items.map(c=>`<tr><td><div class="table-person"><span class="avatar">${e(c.name.slice(0,1))}</span><div><strong>${c.online&&c.status==='active'?'<span class="online-indicator" title="نشاط خلال آخر 3 دقائق"></span>':''}${e(c.name)}</strong><small>${c.loginCount} عملية دخول · ${c.maxSessions} جلسة مسموحة</small></div></div></td><td dir="ltr">${e(c.maskedCode)}</td><td>${statusBadge(c.status)}</td><td>${subscriptionExpiry(c.expiresAt)}<br><span class="muted small">${c.status==='active'?(c.expiresAt===null?'بدون تاريخ انتهاء':'متبقي '+daysLeft(c.expiresAt)+' يوم'):'—'}</span></td><td class="muted">${date(c.lastLoginAt)}</td><td><div class="row gap-sm"><button class="button small ghost" data-edit="${c.id}">إدارة</button><button class="button small ghost" data-extend="${c.id}">تجديد الرمز</button><a class="text-button" href="#activity?clientId=${c.id}">السجل</a></div></td></tr>`).join('')}</tbody></table></div>${pagination(data)}`:empty('لا يوجد عملاء مطابقون','أضف عميلك الأول وحدد له رمزًا من 9 أرقام ومدة اشتراك.')}`;
@@ -82,7 +86,10 @@ function extend(c,onSaved){
   form.onsubmit=ev=>{ev.preventDefault();submit(form,async()=>{const code=form.elements.rotate.checked?form.elements.code.value:'';const saved=await api('/admin/clients/'+c.id+'/extend',{method:'POST',data:{days:Number(form.elements.days.value),revision:c.revision,code}});d.close();await onSaved();toast('تم تجديد الاشتراك.');if(code)showRenewal(saved,code);});};
 }
 async function scriptList(){
-  scripts=await api('/scripts');
+  const current=viewGuard();
+  const loadedScripts=await api('/scripts');
+  if(!current())return;
+  scripts=loadedScripts;
   main().innerHTML=title('مكتبة السكربتات','إدارة السكربتات','ارفع الملف واكتب شرحه، ثم حدّد العملاء المسموح لهم به.',button('إضافة سكربت','add-script',true)+refreshButton)+
   `<div class="notice neutral">المجاني المنشور متاح للجميع. المدفوع محفوظ في الخادم ولا ينزّله إلا عميل مصرح له باشتراك ساري. الحد الأقصى للملف 2 ميجابايت.</div>`+
   (scripts.length?`<div class="script-grid">${scripts.map(s=>`<article class="script-card"><div class="script-top"><span class="file-icon">${icon('script')}</span><span class="badge ${s.published?'':'gray'}">${s.published?'منشور':'مسودة'}</span></div><h3>${e(s.title)}</h3><span class="badge gold">${e(priceLabel(s))}</span><p>${e(s.description||'لم تتم إضافة وصف.')}</p><div class="script-meta">${e(s.category)} · ${e(s.version)} · <span dir="ltr">${size(s.fileSize)}</span></div><div class="script-footer"><button class="button small primary" data-script-edit="${s.id}">تعديل السكربت</button><a class="button small ghost" href="#script/${s.id}">معاينة</a></div></article>`).join('')}</div>`:empty('مكتبتك جاهزة لاستقبال أول سكربت','أضف اسم السكربت وملفه، واكتب المتطلبات وطريقة التركيب والاستخدام.'));
@@ -98,7 +105,9 @@ function editScript(s){
   if(s)$('#delete-script').onclick=safely(async()=>{d.close();if(await confirmAction('حذف السكربت؟','سيُحذف الملف والشرح وصلاحيات الوصول المرتبطة به.','حذف السكربت')){await api('/admin/scripts/'+s.id,{method:'DELETE',data:{revision:s.revision}});await scriptList();toast('تم حذف السكربت.');}});
 }
 async function activity(){
+  const current=viewGuard();
   const data=await api('/admin/audit?'+new URLSearchParams(logState));
+  if(!current())return;
   main().innerHTML=title('المتابعة','سجل الدخول والنشاط','عمليات الدخول والتنزيل وتغييرات الإدارة. يُحتفظ بالسجل لمدة 90 يومًا.',refreshButton)+
   `<div class="toolbar"><select class="control" id="activity-action" aria-label="نوع النشاط"><option value="">كل النشاطات</option>${Object.entries(actions).map(([v,t])=>`<option value="${v}" ${logState.action===v?'selected':''}>${t}</option>`).join('')}</select>${logState.clientId?'<a class="button small ghost" href="#activity">إلغاء تصفية العميل</a>':''}<button class="button small ghost" id="export-log">${icon('download')}تصدير هذه الصفحة</button></div>`+
   (data.items.length?`<div class="table-wrap"><table><thead><tr><th>الوقت — السعودية</th><th>صاحب النشاط</th><th>العملية</th><th>التفاصيل</th><th>المتصفح والشبكة</th></tr></thead><tbody>${data.items.map(x=>`<tr><td>${date(x.createdAt)}</td><td><strong>${e(x.actor)}</strong></td><td><span class="badge ${x.action.includes('failed')?'red':'gray'}">${e(actions[x.action]??x.action)}</span></td><td class="muted">${e(x.detail||'—')}</td><td><span dir="ltr">${e(x.device)}</span><br><span class="muted small" dir="ltr">${e(x.ipHint)}</span></td></tr>`).join('')}</tbody></table></div>${pagination(data)}`:empty('لا توجد عمليات مطابقة','جرّب تغيير نوع النشاط أو العودة إلى جميع العملاء.'))+
@@ -108,7 +117,9 @@ async function activity(){
   $('#export-log').onclick=()=>csvDownload('meshari-activity.csv',['الوقت','العميل','العملية','التفاصيل','المتصفح','الشبكة'],data.items.map(x=>[date(x.createdAt),x.actor,actions[x.action]??x.action,x.detail,x.device,x.ipHint]));
 }
 async function sessions(){
+  const current=viewGuard();
   const data=await api('/admin/sessions');
+  if(!current())return;
   main().innerHTML=title('الأجهزة والجلسات','الجلسات الحالية','تابع الأجهزة المسجّلة، وألغِ أي جلسة عند الحاجة.',refreshButton)+
   (data.length?`<div class="table-wrap"><table><thead><tr><th>الحساب</th><th>الجهاز</th><th>بدأت في</th><th>آخر نشاط</th><th>تنتهي في</th><th>إجراء</th></tr></thead><tbody>${data.map(s=>`<tr><td><strong>${e(s.name??'مشاري — الإدارة')}</strong><br><span class="muted small">${s.role==='admin'?'مدير النظام':'عميل'}</span></td><td dir="ltr">${e(s.device)}<br><span class="muted small">${e(s.ipHint)}</span></td><td>${date(s.createdAt)}</td><td>${date(s.lastSeenAt)}</td><td>${date(s.expiresAt)}</td><td><button class="button small danger" data-revoke="${s.id}">إلغاء الجلسة</button></td></tr>`).join('')}</tbody></table></div>`:empty('لا توجد جلسات','ستظهر هنا الجلسات عند تسجيل الدخول.'))+'<p class="hint">الجلسة لا تعني أن الصفحة مفتوحة الآن. آخر نشاط يعكس آخر طلب وصل إلى الخادم. تعرض القائمة أحدث 200 جلسة.</p>';
   $('#refresh-page').onclick=safely(sessions);$$('[data-revoke]').forEach(el=>el.onclick=safely(async()=>{if(await confirmAction('إلغاء الجلسة؟','سيحتاج صاحبها إلى تسجيل الدخول من جديد.','إلغاء الجلسة')){await api('/admin/sessions/'+el.dataset.revoke,{method:'DELETE',data:{}});await sessions();toast('تم إلغاء الجلسة.');}}));

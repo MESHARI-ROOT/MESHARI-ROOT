@@ -1,4 +1,4 @@
-import {subscriptionExpiry} from './ui.js';
+import {subscriptionExpiry,viewGuard,invalidateView} from './ui.js';
 import {renderStation} from './station.js';
 import {renderVisualGuide} from './visual-guide.js';
 import {$,$$,escape as e,icon,date,daysLeft,size,api,toast,submit,empty,spinner,downloadScript} from './ui.js';
@@ -31,29 +31,33 @@ function renderLogin(){
   if(loginMode==='client')bindCodeInput($('#login-form'),navigator.clipboard);
   if($('#retry-service'))$('#retry-service').onclick=()=>boot();
   const form=$('#login-form');form.onsubmit=event=>{event.preventDefault();submit(form,async()=>{
-    const data=Object.fromEntries(new FormData(form));await api('/auth/'+loginMode,{method:'POST',data});me=await api('/me');renderHeader();location.hash=me.role==='admin'?'admin':'home';await route();toast(me.role==='admin'?'حيّاك مشاري، لوحة إدارتك جاهزة.':'حيّاك '+me.name);
+    const data=Object.fromEntries(new FormData(form));await api('/auth/'+loginMode,{method:'POST',data});me=await api('/me');renderHeader();const destination=me.role==='admin'?'admin':'home';if(location.hash==='#'+destination)await route();else location.hash=destination;toast(me.role==='admin'?'حيّاك مشاري، لوحة إدارتك جاهزة.':'حيّاك '+me.name);
   });};
 }
 function home(){
   main.innerHTML=`<section class="hero">${brandHero('تركيب السكربت · تحديث القطعة')}<h2 class="home-title">وش تبي تسوي؟</h2><div class="choice-grid"><a class="choice featured" href="#install"><span class="ribbon">ابدأ من هنا</span><span class="icon-box">${icon('puzzle')}</span><h3>تركيب سكربتي</h3><p>اختر سكربتك، اقرأ التعليمات،<br>وأكمل التركيب على قطعتك.</p><span class="link-label">ابدأ التركيب ${icon('arrow')}</span></a><a class="choice" href="#firmware"><span class="icon-box">${icon('bolt')}</span><h3>تحديث القطعة فقط</h3><p>جهّز Cronus ZEN وحدثها<br>باستخدام أداة التحديث الرسمية.</p><span class="link-label">تحديث القطعة ${icon('arrow')}</span></a></div><a class="guide-strip" href="#library">${icon('script')}<span><strong>مكتبة السكربتات الخاصة بك</strong><small>الشرح الكامل · الإصدارات · الملفات المتاحة لاشتراكك</small></span><span class="arrow">←</span></a><a class="text-button" href="#guide">${icon('book')} تحتاج مساعدة؟ افتح دليل الاستخدام</a>${me.role==='client'?`<div class="subscription-line"><span class="badge"><span class="dot"></span>اشتراك نشط</span><span>${me.expiresAt===null?'مدى الحياة':'متبقي '+daysLeft(me.expiresAt)+' يوم'}</span><span>${subscriptionExpiry(me.expiresAt)}</span></div>`:'<div class="subscription-line"><span class="badge gold">عرض المالك</span><a href="#admin">العودة إلى لوحة الإدارة ←</a></div>'}</section>`;
 }
 async function subscription(){
- const info=await api('/me/subscription');
+  const current=viewGuard();
+ const info=await api('/me/subscription');if(!current())return;
  main.innerHTML=`<div class="page-title"><div><span class="eyebrow">حسابك</span><h1>الاشتراك والملفات</h1><p>حالة اشتراكك من الخادم مباشرة.</p></div><a class="button ghost" href="#home">الرئيسية</a></div><section class="panel"><h2>${info.role==='admin'?'حساب المالك':e(info.name)}</h2>${info.role==='admin'?'<p>يمكنك إدارة العملاء والاشتراكات وصلاحيات الملفات من لوحة الإدارة.</p><a class="button primary" href="#clients">إدارة العملاء</a>':`<div class="detail-meta"><div><span>الحالة</span><strong>اشتراك نشط</strong></div><div><span>ينتهي في</span><strong>${subscriptionExpiry(info.expiresAt)}</strong></div><div><span>المدة المتبقية</span><strong>${info.lifetime?'بدون انتهاء':info.remainingDays+' يوم'}</strong></div><div><span>الملفات المتاحة لك</span><strong>${info.availableScripts}</strong></div></div><p>مشاري يحدد مدة اشتراكك وصلاحيات الملفات. تتوقف التنزيلات المحمية عند انتهاء المدة أو إيقاف الحساب.</p>`}<div class="row"><a class="button primary" href="#setup-install">اختيار سكربت وتنزيله</a><a class="button ghost" href="#library">مكتبتي</a></div></section>`;
 }
 async function library(){
-  scripts=await api('/scripts');
+  const current=viewGuard();
+  const loadedScripts=await api('/scripts');if(!current())return;scripts=loadedScripts;
   main.innerHTML=`<div class="page-title"><div><span class="eyebrow">سكربتاتك</span><h1>مكتبة السكربتات</h1><p>المجاني وسكربتاتك المدفوعة، مع شرحها وآخر تحديث متاح لاشتراكك.</p></div><a class="button ghost" href="#home">العودة للرئيسية</a></div><div class="toolbar"><form class="search-form" id="script-search"><input class="control" id="script-q" placeholder="ابحث باسم السكربت أو تصنيفه…" aria-label="البحث عن سكربت"><button class="button ghost" aria-label="بحث">${icon('search')}</button></form><span class="badge gold">${scripts.length} سكربت</span></div><div id="script-results"></div>`;
   const draw=()=>{const q=$('#script-q').value.toLocaleLowerCase();const filtered=scripts.filter(s=>(s.title+' '+s.category+' '+s.description).toLocaleLowerCase().includes(q));$('#script-results').innerHTML=filtered.length?`<div class="script-grid">${filtered.map(s=>`<article class="script-card"><div class="script-top"><span class="file-icon">${icon('script')}</span><span class="badge ${s.published?'gold':'gray'}">${e(s.version)}${!s.published?' · مسودة':''}</span></div><h3>${e(s.title)}</h3><p>${e(s.description||'افتح السكربت للاطلاع على تعليماته.')}</p><div class="script-meta">${s.accessTier==='free'?'مجاني':'مدفوع'} · ${e(s.category)} · <span dir="ltr">${size(s.fileSize)}</span></div><div class="script-footer"><a class="button primary small" href="#script/${s.id}">عرض السكربت</a><a class="button ghost small" href="#install?script=${s.id}">تركيب</a></div></article>`).join('')}</div>`:empty('لا توجد سكربتات مطابقة',scripts.length?'جرّب كلمة بحث أخرى.':'ستظهر الملفات هنا بعد أن يضيفها مشاري ويمنح حسابك صلاحية الوصول.');};
   $('#script-search').onsubmit=ev=>{ev.preventDefault();draw();};$('#script-q').oninput=draw;draw();
 }
 async function scriptDetail(id){
-  const s=await api('/scripts/'+encodeURIComponent(id));
+  const current=viewGuard();
+  const s=await api('/scripts/'+encodeURIComponent(id));if(!current())return;
   main.innerHTML=`<div class="page-title"><div><span class="eyebrow">شرح السكربت</span><h1>${e(s.title)}</h1><p>${e(s.category)} · الإصدار ${e(s.version)}</p></div><a class="button ghost" href="#library">العودة للمكتبة</a></div><div class="detail-grid"><article class="panel">${[['عن السكربت','description'],['المتطلبات والتوافق','requirements'],['طريقة التركيب','installation'],['الاستخدام والإعدادات','usage'],['سجل التحديثات','changelog']].map(([label,key])=>`<h2>${label}</h2><p class="guide-content">${e(s[key]||'لم يضف المشرف تعليمات لهذا القسم بعد.')}</p>`).join('')}</article><aside class="panel"><div class="panel-heading"><h2>ملف السكربت</h2>${icon('script')}</div><div class="detail-meta"><div><span class="muted">اسم الملف</span><span dir="ltr">${e(s.fileName)}</span></div><div><span class="muted">الحجم</span><span dir="ltr">${size(s.fileSize)}</span></div><div><span class="muted">آخر تحديث</span><span>${date(s.updatedAt,true)}</span></div></div><p class="hint">بصمة SHA-256</p><p class="hash-value">${s.sha256}</p><div class="stack"><button class="button primary full" id="download-script">${icon('download')}تنزيل الملف</button><a class="button ghost full" href="#install?script=${s.id}">${icon('puzzle')}افتح خطوات التركيب</a></div><p class="hint">تُراجع صلاحية اشتراكك ويُتحقق من بصمة الملف عند التنزيل.</p></aside></div>`;
   $('#download-script').onclick=safe(async()=>{const b=$('#download-script');b.disabled=true;try{await downloadScript(s);}finally{b.disabled=false;}});
 }
 async function wizard(mode,query){
-  scripts=await api('/scripts');let step=1,downloaded=null,ack=false;const fromQuery=new URLSearchParams(query).get('script');let selected=scripts.find(s=>s.id===fromQuery)||scripts[0];
+  const current=viewGuard();
+  const loadedScripts=await api('/scripts');if(!current())return;scripts=loadedScripts;let step=1,downloaded=null,ack=false;const fromQuery=new URLSearchParams(query).get('script');let selected=scripts.find(s=>s.id===fromQuery)||scripts[0];
   const render=()=>{
     const updating=mode==='firmware';
     main.innerHTML=`<div class="wizard"><a class="text-button" href="#home">العودة للرئيسية ←</a><a class="button ghost" href="${mode==='firmware'?'#setup-update':'#setup-install'}">افتح الشرح المتحرك</a><div class="wizard-head"><h1>${updating?'تحديث القطعة':'تركيب السكربت'}</h1></div><div class="steps"><span class="step ${step===1?'active':''}"><b>1</b>تحديث القطعة</span>${!updating?`<span class="step ${step===2?'active':''}"><b>2</b>رفع السكربت</span>`:''}</div><div id="wizard-content"></div></div>`;
@@ -69,21 +73,21 @@ async function wizard(mode,query){
 }
 function guide(){main.innerHTML=`<div class="page-title"><div><span class="eyebrow">المساعدة</span><h1>دليل الاستخدام</h1><p>كل خطوة في مكانها، من الدخول إلى التركيب.</p></div><a class="button ghost" href="#home">الرئيسية</a></div><section class="panel">${[['استلم رمزك من مشاري','رمز دخولك يتكوّن من 9 أرقام. مشاري يحدد مدة اشتراكك والسكربتات المتاحة لك. إذا انتهت المدة أو أوقف الحساب، لن تتمكن من الدخول أو تنزيل ملفات جديدة.'],['افتح مكتبتك واقرأ الشرح','اختر السكربت، وراجع المتطلبات والتوافق وطريقة الاستخدام. لا تُشغّل ملفًا قبل قراءة تعليماته.'],['حدّث القطعة بالأداة الرسمية','من «تحديث القطعة فقط» أو خطوة التحديث في «تركيب سكربتي»، افتح أداة Cronus الرسمية. اختر القطعة وأكمل التحديث فيها.'],['نزّل السكربت ثم ركّبه في Zen Studio','يضبط الموقع صلاحية التنزيل ويتحقق من بصمة الملف. استورد السكربت في Zen Studio Live أو برنامج Windows واتبع خطواته حتى تظهر رسالة نجاح.'],['عند وجود مشكلة','استخدم Chrome أو Edge على الكمبيوتر لفحص USB. اسمح للمتصفح باختيار القطعة. إذا كانت مشغولة، أغلق التطبيقات الأخرى وجرّب كابل بيانات. للدخول أو الصلاحيات، تواصل مع مشاري.']].map(([t,p],i)=>`<div class="guide-step"><span class="number">${i+1}</span><div><h3>${t}</h3><p>${p}</p></div></div>`).join('')}<hr><div class="row"><a class="button ghost" href="https://guide.cronus.support/step1-update-firmware" target="_blank" rel="noopener noreferrer">دليل Cronus الرسمي ${icon('external')}</a><a class="button primary" href="#install">ابدأ التركيب ${icon('arrow')}</a></div></section>`;}
 async function route(){
-  const version=++routeVersion;const [path,query='']=(location.hash.slice(1)||'home').split('?'),[view,id]=path.split('/');renderHeader();
+  invalidateView();const version=++routeVersion;const [path,query='']=(location.hash.slice(1)||'home').split('?'),[view,id]=path.split('/');renderHeader();
   document.body.classList.remove('login-screen');
   if(view==='home'){renderShell('home');renderStation();return;}
   if(['setup-install','setup-update'].includes(view)){renderShell(view);renderVisualGuide(view==='setup-update'?'update':'install',device,!!me);return;}
   if(['catalog','free','paid','cod7','free-script'].includes(view)||(!me&&view==='home')){
     renderShell('catalog');main.innerHTML=spinner();
     try{if(view==='free-script'&&id)await renderFreeScript(id);else await renderCatalog(['free','paid','cod7'].includes(view)?view:'catalog',!!me);}
-    catch(error){main.innerHTML=empty('تعذّر تحميل المكتبة',error.message,'<button class="button primary" id="retry-page">إعادة المحاولة</button>');$('#retry-page').onclick=route;}
+    catch(error){if(version!==routeVersion)return;main.innerHTML=empty('تعذّر تحميل المكتبة',error.message,'<button class="button primary" id="retry-page">إعادة المحاولة</button>');$('#retry-page').onclick=route;}
     return;
   }
   if(!me){renderLogin();return;}
   if(adminViews.includes(view)&&me.role!=='admin'){location.hash='home';return;}
   renderShell(view);main.innerHTML=spinner();document.title=(adminViews.includes(view)?'إدارة مشاري':'MESHARI-ALOTAIBI')+' | مركز السكربتات';
   try{if(version!==routeVersion)return;if(adminViews.includes(view))await renderAdmin(view,query,()=>sessionEnded(''));else if(view==='subscription')await subscription();else if(view==='library')await library();else if(view==='script'&&id)await scriptDetail(id);else if(view==='install'||view==='firmware')await wizard(view,query);else if(view==='guide')guide();else home();}
-  catch(error){if(error.status===401){sessionEnded(error.message);return;}main.innerHTML=empty('تعذّر تحميل الصفحة',error.message,'<button class="button primary" id="retry-page">إعادة المحاولة</button>');$('#retry-page').onclick=route;}
+  catch(error){if(version!==routeVersion)return;if(error.status===401){sessionEnded(error.message);return;}main.innerHTML=empty('تعذّر تحميل الصفحة',error.message,'<button class="button primary" id="retry-page">إعادة المحاولة</button>');$('#retry-page').onclick=route;}
 }
 addEventListener('hashchange',()=>{route();window.scrollTo(0,0);});
 startMotion();renderHeader();

@@ -34,12 +34,23 @@ export const icon=name=>`<svg class="icon" viewBox="0 0 24 24" aria-hidden="true
 export const empty=(title,message,action='')=>`<div class="empty">${icon('script')}<h3>${escape(title)}</h3><p>${escape(message)}</p>${action}</div>`;
 export const spinner=()=>'<div class="loading"><span class="spinner"></span>جاري التحميل…</div>';
 export function toast(message,error=false){const div=document.createElement('div');div.className='toast'+(error?' error':'');div.textContent=message;$('#toasts').append(div);setTimeout(()=>div.remove(),6500);}
-export async function api(path,{method='GET',data,raw=false}={}){
-  let response;try{response=await fetch('/api'+path,{method,credentials:'same-origin',cache:'no-store',headers:{'X-Zen-Request':'1',...(data!==undefined?{'Content-Type':'application/json'}:{})},...(data!==undefined?{body:JSON.stringify(data)}:{})});}catch{const error=new Error('تعذّر الاتصال بالخادم. تحقّق من الإنترنت ثم أعد المحاولة.');error.status=503;throw error;}
-  if(!response.ok){let payload;try{payload=await response.json();}catch{payload={error:'خدمة النظام غير مهيّأة. نشر الواجهة وحدها لا يشغّل الاشتراكات؛ راجع دليل Netlify المرفق.'};}const error=new Error(payload.error||'تعذّر تنفيذ الطلب.');error.status=response.status;throw error;}
-  if(raw)return response;
-  if(!response.headers.get('content-type')?.includes('application/json')){const error=new Error('خدمة النظام غير مهيّأة. راجع دليل نشر Netlify.');error.status=503;throw error;}
-  return response.json();
+// Prevent a slow response from replacing a newer screen (including same-page refreshes).
+let viewRevision=0;
+export function invalidateView(){viewRevision++;}
+export function viewGuard(){const revision=++viewRevision,hash=globalThis.location?.hash;return()=>revision===viewRevision&&hash===globalThis.location?.hash;}
+export async function api(path,{method='GET',data,raw=false,timeoutMs=raw?60000:20000}={}){
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
+  try{
+    const response=await fetch('/api'+path,{method,signal:controller.signal,credentials:'same-origin',cache:'no-store',headers:{'X-Zen-Request':'1',...(data!==undefined?{'Content-Type':'application/json'}:{})},...(data!==undefined?{body:JSON.stringify(data)}:{})});
+    if(!response.ok){let payload;try{payload=await response.json();}catch(error){if(controller.signal.aborted)throw error;payload={error:'الخدمة غير متاحة مؤقتًا. أعد المحاولة بعد قليل.'};}const error=new Error(payload.error||'تعذّر تنفيذ الطلب.');error.status=response.status;throw error;}
+    if(raw){const bytes=await response.arrayBuffer();return new Response(bytes,{status:response.status,statusText:response.statusText,headers:response.headers});}
+    if(!response.headers.get('content-type')?.includes('application/json')){const error=new Error('الخدمة غير متاحة مؤقتًا. أعد المحاولة بعد قليل.');error.status=503;throw error;}
+    return await response.json();
+  }catch(error){
+    if(error.status)throw error;
+    const message=controller.signal.aborted?'استغرق الاتصال وقتًا طويلًا. أعد المحاولة.':'تعذّر الاتصال بالخادم. تحقّق من الإنترنت ثم أعد المحاولة.';
+    const failure=new Error(message);failure.status=503;throw failure;
+  }finally{clearTimeout(timer);}
 }
 export function setError(form,message){let error=$('.form-error',form);if(!error){error=document.createElement('div');error.className='form-error';error.setAttribute('role','alert');form.prepend(error);}error.textContent=message;error.hidden=!message;}
 export async function submit(form,fn){const button=$('[type=submit]',form);if(button?.disabled)return;const old=button?.textContent;if(button){button.disabled=true;button.textContent='جاري الحفظ…';}setError(form,'');try{await fn();}catch(e){setError(form,e.message);}finally{if(button){button.disabled=false;button.textContent=old;}}}

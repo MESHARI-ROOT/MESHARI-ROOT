@@ -19,6 +19,6 @@ export function renderVisualGuide(mode,device,authenticated=false){
   const status=$('#device-state');device.restore?.().then(d=>{if(status.isConnected)status.textContent=d?'تم العثور على '+d.name+' بإذن سابق. يمكنك اختيار السكربت أدناه.':'لم يظهر جهاز مسموح به سابقًا. اضغط فحص اتصال القطعة واختر Cronus ZEN.';}).catch(()=>{});
   $('#guide-prev').onclick=()=>{if(step>0){step--;draw();}};$('#guide-next').onclick=()=>{if(step<list.length-1){step++;draw();}};
   $('#guide-motion').onclick=ev=>{const paused=$('.visual-guide').classList.toggle('animation-paused');motionPaused=paused;ev.currentTarget.textContent=paused?'تشغيل الحركة':'إيقاف الحركة';ev.currentTarget.setAttribute('aria-pressed',String(paused));};
-  $('#guide-connect').onclick=async()=>{const b=$('#guide-connect');b.disabled=true;$('#guide-error').textContent='';try{const d=await device.connect();$('#device-state').textContent='تم التعرف على '+d.name+' — أُغلق الاتصال لتتمكن الأداة الرسمية من استخدامه.';}catch(err){$('#guide-error').textContent=err.message;}finally{b.disabled=!device.supported||platform.mobile;}};
+  $('#guide-connect').onclick=async()=>{const b=$('#guide-connect'),errorBox=$('#guide-error'),deviceStatus=$('#device-state');b.disabled=true;errorBox.textContent='';try{const d=await device.connect();deviceStatus.textContent='تم التعرف على '+d.name+' — أُغلق الاتصال لتتمكن الأداة الرسمية من استخدامه.';}catch(err){errorBox.textContent=err.message;}finally{b.disabled=!device.supported||platform.mobile;}};
  };draw();
 }

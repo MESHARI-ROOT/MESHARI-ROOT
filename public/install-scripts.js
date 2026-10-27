@@ -14,5 +14,5 @@ export async function mountInstallScripts(root,authenticated=false){
     target.querySelector('#download-selected').onclick=async ev=>{const b=ev.currentTarget,msg=target.querySelector('#selected-download-status');b.disabled=true;try{await downloadScript(s,!authenticated);msg.textContent='تم تنزيل الملف والتحقق من بصمته. أكمل برمجته في Zen Studio.';}catch(error){msg.textContent=error.message;}finally{b.disabled=false;}};
    }catch(error){if(chosen===id&&target.isConnected)target.textContent=error.message;}
   };
- }catch(error){if(root.isConnected){root.innerHTML=`<h2>تعذّر عرض السكربتات</h2><p>${e(error.message)}</p><button class="button ghost" id="retry-install-files">إعادة المحاولة</button>`;root.querySelector('button').onclick=()=>mountInstallScripts(root,authenticated=false);}}
+ }catch(error){if(root.isConnected){root.innerHTML=`<h2>تعذّر عرض السكربتات</h2><p>${e(error.message)}</p><button class="button ghost" id="retry-install-files">إعادة المحاولة</button>`;root.querySelector('button').onclick=()=>mountInstallScripts(root,authenticated);}}
 }
