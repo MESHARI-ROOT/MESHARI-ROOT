@@ -1,12 +1,14 @@
 import {$} from './ui.js';
-const hand='M807,326 C786,320 776,301 762,266 C744,247 730,235 734,214 C737,188 761,188 779,199 L798,218 C806,223 806,211 795,181 C781,153 763,124 770,95 C776,64 797,61 816,71 C843,85 844,123 846,159 L854,209 C865,215 877,162 894,133 C907,109 933,108 946,128 C960,156 936,189 921,222 C915,237 921,245 933,230 C950,207 977,210 985,235 C994,259 973,280 958,300 L933,331 C915,350 891,355 875,341 Z';
-export function mascot(id){return `<svg class="mascot" viewBox="0 0 1000 1000" role="img" aria-label="شعار MESHARI الفضائي"><defs><clipPath id="body-${id}"><path d="M0,0H1000V1000H0Z ${hand}" clip-rule="evenodd"/></clipPath><clipPath id="hand-${id}"><path d="${hand}"/></clipPath></defs><image href="/assets/meshari-mascot.png" width="1000" height="1000" clip-path="url(#body-${id})"/><g class="hand-layer"><image href="/assets/meshari-mascot.png" width="1000" height="1000" clip-path="url(#hand-${id})"/></g></svg>`;}
+// A single image is smoothly deformed at the raised hand. No cut-out copies,
+// exposed wrist seams, or rotating fragments of the shield.
+const handMap='data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1000"><defs><radialGradient id="h" cx="86%" cy="18%" r="21%"><stop offset="0" stop-color="#ff8080"/><stop offset=".45" stop-color="#e08080"/><stop offset="1" stop-color="#808080"/></radialGradient></defs><rect width="1000" height="1000" fill="url(#h)"/></svg>');
+export function mascot(id){return `<svg class="mascot" viewBox="0 0 1000 1000" role="img" aria-label="شعار MESHARI الفضائي"><defs><filter id="greeting-${id}" x="-5%" y="-5%" width="110%" height="110%" color-interpolation-filters="sRGB"><feImage href="${handMap}" x="0" y="0" width="1000" height="1000" preserveAspectRatio="none" result="hand-map"/><feDisplacementMap class="hand-flex" in="SourceGraphic" in2="hand-map" scale="0" xChannelSelector="R" yChannelSelector="G"/></filter></defs><image href="/assets/meshari-mascot.png" width="1000" height="1000" filter="url(#greeting-${id})"/></svg>`;}
 export function startMotion(){
   let reduced=matchMedia('(prefers-reduced-motion:reduce)').matches;try{reduced=localStorage.getItem('zen-reduce')==='1'||reduced;}catch{}
-  const intro=$('#intro'),button=$('#motion-button');let timer,priorFocus;
+  const intro=$('#intro'),button=$('#motion-button');let timer,priorFocus,introStarted=0;
   const setReduced=()=>{document.body.classList.toggle('reduced',reduced);button.setAttribute('aria-pressed',String(reduced));button.textContent=reduced?'الحركة مخفّضة':'تقليل الحركة';};
   function close(){clearTimeout(timer);intro.hidden=true;document.body.classList.remove('intro-open');['#header','#shell','#footer'].forEach(s=>$(s).inert=false);if(priorFocus?.isConnected)priorFocus.focus();}
-  function play(){clearTimeout(timer);if(reduced)return;priorFocus=document.activeElement;intro.hidden=false;document.body.classList.add('intro-open');$('#arrival-logo').innerHTML=mascot('arrival');['#header','#shell','#footer'].forEach(s=>$(s).inert=true);$('#skip-intro').focus();intro.querySelectorAll('.ship,.beam,.portal,.alien-arrival,.hand-layer,.intro-text,.intro-progress span').forEach(el=>{el.getAnimations().forEach(a=>{a.cancel();a.play();});});timer=setTimeout(close,7200);}
+  function play(){clearTimeout(timer);if(reduced)return;priorFocus=document.activeElement;introStarted=performance.now();intro.hidden=false;document.body.classList.add('intro-open');$('#arrival-logo').innerHTML=mascot('arrival');['#header','#shell','#footer'].forEach(s=>$(s).inert=true);$('#skip-intro').focus();intro.querySelectorAll('.ship,.beam,.portal,.alien-arrival,.hand-layer,.intro-text,.intro-progress span').forEach(el=>{el.getAnimations().forEach(a=>{a.cancel();a.play();});});timer=setTimeout(close,7200);}
   setReduced();button.onclick=()=>{reduced=!reduced;try{localStorage.setItem('zen-reduce',reduced?'1':'0');}catch{}setReduced();if(reduced)close();};
   $('#skip-intro').onclick=close;$('#replay-intro').onclick=()=>{if(reduced){reduced=false;setReduced();}play();};
   document.addEventListener('keydown',e=>{if(!intro.hidden){if(e.key==='Escape')close();if(e.key==='Tab'){e.preventDefault();$('#skip-intro').focus();}}});
@@ -28,7 +30,9 @@ export function startMotion(){
     }
     function draw(now){
       requestAnimationFrame(draw);if(document.hidden||now-last<(reduced?1000:40))return;last=now;
-      const t=reduced?0:now/1000;ctx.clearRect(0,0,w,h);
+      const t=reduced?0:now/1000;
+      document.querySelectorAll('.hand-flex').forEach(el=>{const inIntro=!!el.closest('#intro');const elapsed=(now-introStarted)/1000;const greeting=inIntro?(elapsed>3.5&&elapsed<6.5?Math.sin((elapsed-3.5)*5)*24:0):Math.sin(t*1.8)*14;el.setAttribute('scale',String(reduced?0:greeting));});
+      ctx.clearRect(0,0,w,h);
       const count=w<600?85:150;
       for(const s of stars.slice(0,count)){const x=((s.x+t*s.speed*.3)%1)*w,y=((s.y+t*s.speed)%1)*h;
         ctx.fillStyle=s.g?'#ecd18b':'#d7e5f2';ctx.globalAlpha=.25+.55*(.5+.5*Math.sin(t*.7+s.p));ctx.beginPath();ctx.arc(x,y,s.r,0,Math.PI*2);ctx.fill();
