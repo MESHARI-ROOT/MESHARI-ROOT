@@ -1,5 +1,19 @@
 # Cloudflare deployment
 
+## النشر من GitHub
+
+الإعداد موجود في Actions باسم **Prepare Cloudflare migration**. تشغيله يدوي فقط من فرع main؛ حفظ الملفات وحده لا يشغّل النشر.
+
+أضف القيم التالية في إعدادات المستودع: Settings → Secrets and variables → Actions → New repository secret:
+
+- CLOUDFLARE_API_TOKEN: رمز Cloudflare مخصص للنشر على حسابك، وليس كلمة المرور.
+- CLOUDFLARE_ACCOUNT_ID: معرّف حساب Cloudflare.
+- ADMIN_USER وADMIN_PASSWORD_HASH وAUTH_PEPPER: نفس قيم النظام الحالي؛ احتفظ بقيمة AUTH_PEPPER الأصلية حتى تعمل رموز العملاء القديمة.
+
+لا ترسل هذه القيم في الدردشة أو تحفظها داخل ملفات المستودع. بعد إضافة الأسرار، اختر Actions → Prepare Cloudflare migration → Run workflow. يبدأ النشر في وضع نقل البيانات؛ تبقى عمليات العملاء مغلقة حتى استيراد البيانات الخاصة والتحقق منها. لا يعتبر نجاح هذا الإعداد نقلًا مكتملًا للعملاء أو السكربتات المدفوعة.
+
+يحفظ الإجراء أسرار التطبيق في ملف مؤقت بصلاحية 0600 ويحذفه بعد النشر. لا يطلب خطة مدفوعة ولا ينشر النسخة الاحتياطية. يتطلب تشغيل GitHub Actions توفر رصيد الاستخدام المسموح في حساب GitHub.
+
 This deployment uses Workers static assets and one SQLite Durable Object. It does not require R2, D1, an external database, or a paid plan. Free service quotas still apply; this is not a promise of unlimited hosting or a lifetime custom domain.
 
 Run `npm ci`, `npm run test:cloudflare`, and `npm run test:cloudflare:runtime`. Authenticate using the official Wrangler CLI and deploy with `npm run deploy:cloudflare`.
